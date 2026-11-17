@@ -13,7 +13,7 @@ interface SettingsOptions {
 
 export function renderSettingsPage(options: SettingsOptions): string {
   const displayName = options.profile?.display_name ?? '';
-  const currency = options.profile?.default_currency ?? 'USD';
+  const currency = 'BDT';
   return `
     ${renderPageHeader('Settings', 'Manage your account and resale preferences.')}
     ${options.error ? `<div class="form-alert form-alert-error" role="alert">${escapeHtml(options.error)}</div>` : ''}
@@ -24,7 +24,7 @@ export function renderSettingsPage(options: SettingsOptions): string {
         <div class="settings-email"><span>Email</span><strong>${escapeHtml(options.email)}</strong></div>
         <form class="settings-form" data-settings-form novalidate>
           <label class="form-field"><span>Display name</span><input name="displayName" type="text" value="${escapeHtml(displayName)}" autocomplete="name" required /></label>
-          <label class="form-field"><span>Preferred currency</span><select name="currency"><option value="USD"${currency === 'USD' ? ' selected' : ''}>USD</option><option value="EUR"${currency === 'EUR' ? ' selected' : ''}>EUR</option><option value="GBP"${currency === 'GBP' ? ' selected' : ''}>GBP</option></select></label>
+          <label class="form-field"><span>Preferred currency</span><select name="currency"><option value="BDT"${currency === 'BDT' ? ' selected' : ''}>BDT (৳)</option></select></label>
           <button class="button button-primary" type="submit"${options.saving ? ' disabled' : ''}>${options.saving ? 'Saving…' : 'Save profile'}</button>
         </form>
       </article>

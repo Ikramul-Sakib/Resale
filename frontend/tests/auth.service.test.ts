@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuthService, type BrowserSupabaseClient } from '../src/services/supabase';
 
 function makeClient() {
-  const profile = { id: 'user-1', display_name: 'Demo User', default_currency: 'USD', preferences: {} };
+  const profile = { id: 'user-1', display_name: 'Demo User', default_currency: 'BDT', preferences: {} };
   const client = {
     auth: {
       signUp: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1', email: 'user@example.test' }, session: null }, error: null }),

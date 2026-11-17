@@ -120,7 +120,7 @@ The Supabase database and RLS tests remain live pgTAP tests under `supabase/test
 
 Price estimation is isolated in `backend/src/services/pricing/service.ts`. It accepts only the
 user-confirmed item after `review_status=reviewed`, sanitizes free text, calls the Gemini adapter,
-validates ordered positive prices and requested currency, and persists model/source/prompt metadata.
+validates ordered positive prices in BDT, and persists model/source/prompt metadata.
 The Gemini service supports a real Google Gen AI adapter and an explicit mock adapter. The mock is
 used when `GEMINI_MOCK=true` or credentials are absent and is labelled in every response.
 
@@ -156,9 +156,9 @@ and sale insert atomic. Fee calculation uses fixed-cent arithmetic and returns r
 placeholder/unverified rules are never silently treated as current rates.
 
 Dashboard and Analytics query inventory, sales, and audit events. Aggregates remain grouped by
-currency, while Chart.js renders monthly sales and status distribution from real data. Price Guides
+BDT, while Chart.js renders monthly sales and status distribution from real data. Price Guides
 show only owner estimates and observations, with an explicit empty state when no verified market data
 is connected. The resale-index endpoint remains `501` until an authorized provider exists.
 
-Settings includes profile, preferred currency, password change, and sign out. Account deletion is
+Settings includes profile, BDT preference, password change, and sign out. Account deletion is
 intentionally omitted because safe server-side cleanup is not implemented.

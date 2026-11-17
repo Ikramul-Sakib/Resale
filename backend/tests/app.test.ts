@@ -32,7 +32,7 @@ function makeItem(id: string, userId: string, itemName: string): InventoryItem {
     condition: 'Good',
     attributes: {},
     estimated_value: 79,
-    estimated_value_currency: 'USD',
+    estimated_value_currency: 'BDT',
     created_at: now(),
     updated_at: now(),
   };
@@ -317,11 +317,11 @@ describe('ResaleIQ API', () => {
     const response = await request(app).post('/api/v1/sales').set('Authorization', 'Bearer user-a-token').send({
       inventory_item_id: ITEM_A,
       sale_price: 80,
-      sale_currency: 'USD',
+      sale_currency: 'BDT',
       fee_amount: 10,
-      fee_currency: 'USD',
+      fee_currency: 'BDT',
       net_earnings: 70,
-      net_currency: 'USD',
+      net_currency: 'BDT',
     });
     expect(response.status).toBe(201);
     expect(response.body.user_id).toBe(USER_A);
@@ -332,7 +332,7 @@ describe('ResaleIQ API', () => {
   it('calculates fees from a configured rule and returns provenance', async () => {
     const { app } = makeApp();
     const response = await request(app).post('/api/v1/fees/calculate').set('Authorization', 'Bearer user-a-token').send({
-      marketplace_id: MARKETPLACE_ID, sale_price: 100, currency: 'USD',
+      marketplace_id: MARKETPLACE_ID, sale_price: 100, currency: 'BDT',
     });
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ fee_amount: 10, rule: { source: 'test fixture', verified_at: now() } });
@@ -340,14 +340,14 @@ describe('ResaleIQ API', () => {
 
   it('marks a user-entered fee percentage as unverified', async () => {
     const { app } = makeApp();
-    const response = await request(app).post('/api/v1/fees/calculate').set('Authorization', 'Bearer user-a-token').send({ marketplace_id: MARKETPLACE_ID, sale_price: 100, currency: 'USD', manual_percentage: 12 });
+    const response = await request(app).post('/api/v1/fees/calculate').set('Authorization', 'Bearer user-a-token').send({ marketplace_id: MARKETPLACE_ID, sale_price: 100, currency: 'BDT', manual_percentage: 12 });
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ fee_amount: 12, status: 'user_entered_unverified', rule: { verified_at: null, source: 'user_input' } });
   });
 
   it('does not estimate an item owned by another user', async () => {
     const { app } = makeApp();
-    const response = await request(app).post('/api/v1/items/10000000-0000-4000-8000-0000000000b1/estimate').set('Authorization', 'Bearer user-a-token').send({ currency: 'USD' });
+    const response = await request(app).post('/api/v1/items/10000000-0000-4000-8000-0000000000b1/estimate').set('Authorization', 'Bearer user-a-token').send({ currency: 'BDT' });
     expect(response.status).toBe(404);
   });
 

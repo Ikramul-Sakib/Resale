@@ -57,7 +57,7 @@ export interface AppState {
   analysisStage: AnalysisStage;
   uploadError: string;
   toast: string;
-  currency: 'USD' | 'EUR' | 'GBP';
+  currency: 'BDT';
   identification: IdentificationFields;
   estimateLoading: boolean;
   estimateError: string;

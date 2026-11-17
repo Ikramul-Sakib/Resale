@@ -1,6 +1,6 @@
 # ResaleIQ
 
-ResaleIQ is an AI-assisted resale research, valuation, and inventory workspace. It is not
+ResaleIQ is an AI-assisted resale research, valuation, and inventory workspace. It uses Bangladeshi taka (BDT) only and is not
 an e-commerce marketplace.
 
 ## Local development
@@ -18,6 +18,22 @@ npm install
 supabase start
 supabase db reset
 ```
+
+After starting or resetting the local Supabase stack, refresh the local keys from the active
+instance. Do not reuse keys from an older local stack:
+
+```bash
+eval "$(supabase status -o env)"
+export SUPABASE_URL="$API_URL"
+export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+export VITE_SUPABASE_URL="$API_URL"
+export VITE_SUPABASE_ANON_KEY="$ANON_KEY"
+```
+
+Run those exports in each terminal used to start the backend or frontend. If you keep values in
+`.env`, copy the matching `API_URL`, `SERVICE_ROLE_KEY`, and `ANON_KEY` values into their
+corresponding variables and restart both servers. A stale service-role or anon key produces
+`bad_jwt` database errors even when the Supabase containers are healthy.
 
 Copy `.env.example` to `.env` and fill the local values. The browser may receive only
 `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; keep `SUPABASE_SERVICE_ROLE_KEY` and any

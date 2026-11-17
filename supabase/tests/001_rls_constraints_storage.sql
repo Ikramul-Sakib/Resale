@@ -110,7 +110,7 @@ select throws_ok(
       '20000000-0000-0000-0000-0000000000a1',
       '10000000-0000-0000-0000-0000000000a1',
       '00000000-0000-0000-0000-0000000000a1',
-      100, 90, 120, 'USD'
+      100, 90, 120, 'BDT'
     )$$,
   '23514',
   'new row for relation "price_estimates" violates check constraint "price_estimates_ordered_range"',
@@ -124,7 +124,7 @@ select throws_ok(
       '20000000-0000-0000-0000-0000000000a1',
       '10000000-0000-0000-0000-0000000000a1',
       '00000000-0000-0000-0000-0000000000a1',
-      50, 120, 90, 'USD'
+      50, 120, 90, 'BDT'
     )$$,
   '23514',
   'new row for relation "price_estimates" violates check constraint "price_estimates_ordered_range"',

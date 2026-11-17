@@ -242,7 +242,7 @@ class AnalyticsRepository {
     const saleRows = (sales.data ?? []) as Array<{ inventory_item_id: string; sale_price: number | string; sale_currency: string; net_earnings: number | string; net_currency: string; sold_at: string; fee_amount: number | string }>;
     const count = (status: InventoryItem['status']) => inventoryRows.filter((row) => row.status === status).length;
     const byCurrency = (rows: Array<{ currency: string; value: number }>) => rows.reduce<Record<string, number>>((result, row) => { result[row.currency] = Number(((result[row.currency] ?? 0) + row.value).toFixed(2)); return result; }, {});
-    const inventoryValueByCurrency = byCurrency(inventoryRows.filter((row) => row.estimated_value != null).map((row) => ({ currency: row.estimated_value_currency ?? 'USD', value: Number(row.estimated_value ?? 0) })));
+    const inventoryValueByCurrency = byCurrency(inventoryRows.filter((row) => row.estimated_value != null).map((row) => ({ currency: row.estimated_value_currency ?? 'BDT', value: Number(row.estimated_value ?? 0) })));
     const revenueByCurrency = byCurrency(saleRows.map((row) => ({ currency: row.sale_currency, value: Number(row.sale_price) })));
     const profitByCurrency = byCurrency(saleRows.map((row) => ({ currency: row.net_currency, value: Number(row.net_earnings) })));
     const months = saleRows.reduce<Record<string, { revenue_by_currency: Record<string, number>; count: number }>>((result, row) => { const month = row.sold_at.slice(0, 7); const entry = result[month] ?? { revenue_by_currency: {}, count: 0 }; entry.count += 1; entry.revenue_by_currency[row.sale_currency] = Number(((entry.revenue_by_currency[row.sale_currency] ?? 0) + Number(row.sale_price)).toFixed(2)); result[month] = entry; return result; }, {});

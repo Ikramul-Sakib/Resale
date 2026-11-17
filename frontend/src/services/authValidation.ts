@@ -19,5 +19,5 @@ export const resetPasswordSchema = z.object({ password, confirmPassword: z.strin
 });
 export const profileSchema = z.object({
   displayName: z.string().trim().min(1, 'Enter your display name.').max(80, 'Use 80 characters or fewer.'),
-  currency: z.string().regex(/^[A-Z]{3}$/, 'Choose a valid currency.'),
+  currency: z.literal('BDT'),
 }).strict();

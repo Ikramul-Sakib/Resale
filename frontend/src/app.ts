@@ -1,5 +1,21 @@
-import { createIcons, icons } from 'lucide';
-import { Chart } from 'chart.js/auto';
+import {
+  Bookmark,
+  BookOpen,
+  Calculator,
+  ChartNoAxesCombined,
+  Construction,
+  FilePenLine,
+  Image,
+  ImagePlus,
+  Info,
+  LayoutDashboard,
+  Package,
+  ScanLine,
+  Search,
+  Settings2,
+  X,
+  createIcons,
+} from 'lucide';
 import { renderLayout } from './components/layout';
 import { renderDashboardPage, type DashboardView } from './pages/dashboard';
 import { renderEstimatePage } from './pages/estimate';
@@ -23,6 +39,7 @@ import type { AppState, AuthPageId, DemoImage, ScreenId } from './types';
 const DEMO_MODE = String(import.meta.env.VITE_DEMO_MODE ?? '').toLowerCase() === 'true';
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const lucideIcons = { Bookmark, BookOpen, Calculator, ChartNoAxesCombined, Construction, FilePenLine, Image, ImagePlus, Info, LayoutDashboard, Package, ScanLine, Search, Settings2, X };
 const demoImages: DemoImage[] = [
   { id: 'demo-1', name: 'Sample photo 1', isDemo: true },
   { id: 'demo-2', name: 'Sample photo 2', isDemo: true },
@@ -32,7 +49,7 @@ const demoImages: DemoImage[] = [
 const state: AppState = {
   screen: 'dashboard', authPage: null, authStatus: 'loading', authError: '', fieldErrors: {}, user: null, profile: null,
   authLoading: false, authSuccess: '', settingsSaving: false, passwordSaving: false, dashboardLoading: false,
-  selectedImages: DEMO_MODE ? demoImages : [], analysisStage: DEMO_MODE ? 1 : 0, uploadError: '', toast: '', currency: 'USD',
+  selectedImages: DEMO_MODE ? demoImages : [], analysisStage: DEMO_MODE ? 1 : 0, uploadError: '', toast: '', currency: 'BDT',
   scanStatus: 'idle', uploadProgress: 0, scanError: '', cameraError: '', itemSaving: false,
   identification: { name: 'Mechanical keyboard, 75% layout', brand: 'Keychron', model: 'K2', category: 'Computer accessories', productType: 'Keyboard', condition: 'Good, light wear', attributes: 'Wireless, hot-swappable, RGB' },
   estimateLoading: false, estimateError: '', marketplaces: [], estimateMarketplaceId: '', suggestedPriceInput: '', manualFeePercentage: '', inventorySaving: false,
@@ -47,7 +64,8 @@ let dashboardRequestInFlight = false;
 let estimateRequestInFlight = false;
 let listingRequestInFlight = false;
 let pageRequestInFlight = false;
-let analyticsCharts: Chart[] = [];
+let analyticsCharts: Array<{ destroy: () => void }> = [];
+let chartModule: Promise<typeof import('chart.js/auto')> | undefined;
 
 function getService(): AuthService { if (!authService) authService = getAuthService(); return authService; }
 function isAuthenticated(): boolean { return state.authStatus === 'authenticated' && Boolean(state.user); }
@@ -92,7 +110,7 @@ function render(): void {
   }
   state.authPage = null; state.screen = pathToScreen(guarded.path as AppPath);
   root.innerHTML = renderLayout({ activeScreen: state.screen, content: renderProtectedContent(), toast: state.toast, demoMode: DEMO_MODE && !isAuthenticated(), displayName: DEMO_MODE && !isAuthenticated() ? 'Alex Rivera' : currentDisplayName(), email: state.user?.email ?? 'Demo workspace' });
-  createIcons({ icons }); bindEvents();
+  createIcons({ icons: lucideIcons }); bindEvents();
   const dialog = root.querySelector<HTMLElement>('[role="dialog"]');
   dialog?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
 }
@@ -216,7 +234,7 @@ function setAuthContext(context: AuthContext | null): void {
   state.user = context?.user ? { id: context.user.id, email: context.user.email } : null;
   state.profile = context?.profile ?? null;
   state.authStatus = context ? 'authenticated' : 'unauthenticated';
-  if (context?.profile?.default_currency) state.currency = context.profile.default_currency as AppState['currency'];
+  state.currency = 'BDT';
 }
 function setFormErrors(issues: Array<{ path: PropertyKey[]; message: string }>): void { state.fieldErrors = Object.fromEntries(issues.map((issue) => [String(issue.path[0] ?? 'form'), issue.message])); }
 function clearFormState(): void { state.authError = ''; state.authSuccess = ''; state.fieldErrors = {}; }
@@ -291,13 +309,16 @@ async function loadPhase9Page(): Promise<void> {
     if (state.screen === 'inventory') state.inventoryError = message; else if (state.screen === 'saved-scans') state.savedScansError = message; else if (state.screen === 'fee-calculator') state.feeError = message; else if (state.screen === 'analytics') state.analyticsError = message; else state.priceGuidesError = message;
   } finally {
     state.inventoryLoading = false; state.savedScansLoading = false; state.analyticsLoading = false; state.priceGuidesLoading = false; pageRequestInFlight = false; render();
-    if (state.screen === 'analytics' && state.analyticsData) renderAnalyticsCharts();
+    if (state.screen === 'analytics' && state.analyticsData) void renderAnalyticsCharts();
   }
 }
 
-function renderAnalyticsCharts(): void {
+async function renderAnalyticsCharts(): Promise<void> {
   analyticsCharts.forEach((chart) => chart.destroy()); analyticsCharts = [];
   const data = state.analyticsData; if (!data) return;
+  chartModule ??= import('chart.js/auto');
+  const { Chart } = await chartModule;
+  if (state.screen !== 'analytics' || !state.analyticsData) return;
   const monthly = document.querySelector<HTMLCanvasElement>('#monthly-sales-chart'); const statuses = document.querySelector<HTMLCanvasElement>('#inventory-status-chart');
   if (monthly) analyticsCharts.push(new Chart(monthly, { type: 'line', data: { labels: (data.monthly_sales ?? []).map((row) => row.month), datasets: Object.keys(data.monthly_sales?.[0]?.revenue_by_currency ?? {}).map((currency) => ({ label: currency, data: (data.monthly_sales ?? []).map((row) => row.revenue_by_currency[currency] ?? 0), borderColor: '#4f46e5', tension: .25 })) }, options: { responsive: true } }));
   if (statuses) analyticsCharts.push(new Chart(statuses, { type: 'doughnut', data: { labels: (data.status_distribution ?? []).map((row) => row.status), datasets: [{ data: (data.status_distribution ?? []).map((row) => row.count), backgroundColor: ['#4f46e5', '#7c83f5', '#f0b429', '#aab2c1'] }] }, options: { responsive: true } }));
@@ -430,7 +451,7 @@ async function saveSettings(form: HTMLFormElement): Promise<void> { const parsed
 async function savePassword(form: HTMLFormElement): Promise<void> { const parsed = resetPasswordSchema.safeParse(Object.fromEntries(new FormData(form).entries())); clearFormState(); if (!parsed.success) { setFormErrors(parsed.error.issues); state.authError = 'Check the password fields.'; render(); return; } state.passwordSaving = true; render(); try { await getService().changePassword(parsed.data.password); state.authSuccess = 'Password updated.'; form.reset(); } catch { state.authError = 'Unable to change your password right now.'; } finally { state.passwordSaving = false; render(); } }
 
 async function openInventory(id: string): Promise<void> { try { state.inventorySelected = await getApiClient().get<import('./services/api').InventoryItem>(`/inventory/${id}`); render(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Inventory item could not be opened.'; render(); } }
-async function saveInventoryItem(form: HTMLFormElement): Promise<void> { const values = Object.fromEntries(new FormData(form)); const item = state.inventorySelected; if (!item) return; const attributes = { ...(item.attributes ?? {}), notes: String(values.notes ?? '').slice(0, 2000) }; try { const payload = { item_name: String(values.item_name).trim(), condition: String(values.condition || '').trim() || null, purchase_price: values.purchase_price ? Number(values.purchase_price) : null, purchase_currency: 'USD', estimated_value: values.estimated_value ? Number(values.estimated_value) : null, estimated_value_currency: 'USD', attributes }; state.inventorySelected = item.id ? await getApiClient().patch<import('./services/api').InventoryItem>(`/inventory/${item.id}`, payload) : await getApiClient().post<import('./services/api').InventoryItem>('/inventory', payload); showToast('Inventory item saved.'); state.inventorySelected = null; await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Inventory item could not be saved.'; render(); } }
+async function saveInventoryItem(form: HTMLFormElement): Promise<void> { const values = Object.fromEntries(new FormData(form)); const item = state.inventorySelected; if (!item) return; const attributes = { ...(item.attributes ?? {}), notes: String(values.notes ?? '').slice(0, 2000) }; try { const payload = { item_name: String(values.item_name).trim(), condition: String(values.condition || '').trim() || null, purchase_price: values.purchase_price ? Number(values.purchase_price) : null, purchase_currency: 'BDT', estimated_value: values.estimated_value ? Number(values.estimated_value) : null, estimated_value_currency: 'BDT', attributes }; state.inventorySelected = item.id ? await getApiClient().patch<import('./services/api').InventoryItem>(`/inventory/${item.id}`, payload) : await getApiClient().post<import('./services/api').InventoryItem>('/inventory', payload); showToast('Inventory item saved.'); state.inventorySelected = null; await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Inventory item could not be saved.'; render(); } }
 async function setInventoryStatus(status: 'owned' | 'archived'): Promise<void> { const id = state.inventorySelected?.id; if (!id) return; try { state.inventorySelected = await getApiClient().patch<import('./services/api').InventoryItem>(`/inventory/${id}`, { status }); showToast(status === 'archived' ? 'Item archived.' : 'Item restored.'); await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Status could not be updated.'; render(); } }
 async function deleteInventory(): Promise<void> { const id = state.inventorySelected?.id; if (!id) return; try { await getApiClient().request(`/inventory/${id}`, { method: 'DELETE' }); state.inventorySelected = null; showToast('Inventory item deleted.'); await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Inventory item could not be deleted.'; render(); } }
 async function recordInventorySale(form: HTMLFormElement): Promise<void> { const item = state.inventorySelected; if (!item) return; const values = Object.fromEntries(new FormData(form)); const sale = Number(values.sale_price); const fee = Number(values.fee_amount || 0); const shipping = Number(values.shipping_cost || 0); if (!Number.isFinite(sale) || sale <= 0) { state.inventoryError = 'Enter a valid sale price.'; render(); return; } try { await getApiClient().post('/sales', { inventory_item_id: item.id, marketplace_id: String(values.marketplace_id || '') || null, sale_price: sale, sale_currency: String(values.sale_currency), fee_amount: fee + shipping, fee_currency: String(values.sale_currency), net_earnings: Math.round((sale - fee - shipping) * 100) / 100, net_currency: String(values.sale_currency), sold_at: new Date().toISOString(), attributes: { shipping_cost: shipping } }); state.inventorySelected = null; showToast('Sale recorded and item marked sold.'); await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'The sale could not be recorded.'; render(); } }
@@ -438,7 +459,7 @@ async function openSavedScan(id: string): Promise<void> { try { state.scanResult
 async function retrySavedScan(id: string): Promise<void> { try { state.scanResult = await getApiClient().post<import('./services/api').ScanResponse>(`/scans/${id}/retry`); navigate('/identification'); } catch (error) { state.savedScansError = error instanceof ApiError ? error.message : 'Scan retry failed.'; render(); } }
 async function deleteSavedScan(id: string): Promise<void> { try { await getApiClient().request(`/scans/${id}`, { method: 'DELETE' }); showToast('Scan deleted.'); await loadPhase9Page(); } catch (error) { state.savedScansError = error instanceof ApiError ? error.message : 'Scan could not be deleted.'; render(); } }
 async function calculateStandaloneFee(form: HTMLFormElement): Promise<void> { const values = Object.fromEntries(new FormData(form)); state.feeLoading = true; state.feeError = ''; render(); try { state.feeResult = await getApiClient().post<import('./services/api').FeeCalculation>('/fees/calculate', { marketplace_id: String(values.marketplace_id), sale_price: Number(values.sale_price), purchase_cost: Number(values.purchase_cost || 0), shipping_cost: Number(values.shipping_cost || 0), currency: String(values.currency), manual_percentage: values.manual_percentage ? Number(values.manual_percentage) : undefined }); } catch (error) { state.feeError = error instanceof ApiError ? error.message : 'Fee calculation failed.'; } finally { state.feeLoading = false; render(); } }
-async function loadAnalyticsWithDates(form: HTMLFormElement): Promise<void> { const values = Object.fromEntries(new FormData(form)); const query = new URLSearchParams(); if (values.date_from) query.set('date_from', `${values.date_from}T00:00:00.000Z`); if (values.date_to) query.set('date_to', `${values.date_to}T23:59:59.999Z`); state.analyticsLoading = true; render(); try { state.analyticsData = await getApiClient().get<import('./services/api').AnalyticsDashboard>(`/analytics/dashboard?${query}`); } catch (error) { state.analyticsError = error instanceof ApiError ? error.message : 'Analytics could not be loaded.'; } finally { state.analyticsLoading = false; render(); renderAnalyticsCharts(); } }
+async function loadAnalyticsWithDates(form: HTMLFormElement): Promise<void> { const values = Object.fromEntries(new FormData(form)); const query = new URLSearchParams(); if (values.date_from) query.set('date_from', `${values.date_from}T00:00:00.000Z`); if (values.date_to) query.set('date_to', `${values.date_to}T23:59:59.999Z`); state.analyticsLoading = true; render(); try { state.analyticsData = await getApiClient().get<import('./services/api').AnalyticsDashboard>(`/analytics/dashboard?${query}`); } catch (error) { state.analyticsError = error instanceof ApiError ? error.message : 'Analytics could not be loaded.'; } finally { state.analyticsLoading = false; render(); void renderAnalyticsCharts(); } }
 
 async function saveIdentification(): Promise<void> {
   const itemId = state.scanResult?.identified_item?.id;

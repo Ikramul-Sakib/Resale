@@ -49,7 +49,7 @@ Composite foreign keys carry ownership across related rows. For example, an inve
 
 ## Money and estimate safety
 
-Money is stored as `NUMERIC(12,2)` with a companion ISO-like three-letter currency column. Price estimates enforce:
+Money is stored as `NUMERIC(12,2)` with a companion `BDT` currency column. The BDT-only migration rejects non-BDT values; it never silently relabels existing money. Price estimates enforce:
 
 ```text
 low <= typical <= high
@@ -93,5 +93,5 @@ status/date filtering. Existing RLS covers every Phase 9 table; no new user-data
 
 The existing `record_sale` function verifies ownership, marks the inventory row sold, and inserts
 the sale atomically. Shipping and payment details are currently stored in validated sale attributes.
-Analytics groups money by currency. Price Guides show saved user estimates and observations only;
+Analytics currently reports money in BDT. Price Guides show saved user estimates and observations only;
 without observation rows the correct state is “No verified market data connected yet.”

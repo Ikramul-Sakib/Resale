@@ -101,7 +101,7 @@ Create example:
   "condition": "Good, light wear",
   "status": "owned",
   "estimated_value": 79,
-  "estimated_value_currency": "USD",
+  "estimated_value_currency": "BDT",
   "attributes": { "wireless": true }
 }
 ```
@@ -118,11 +118,11 @@ Create example:
   "inventory_item_id": "<uuid>",
   "marketplace_id": "<uuid>",
   "sale_price": 80,
-  "sale_currency": "USD",
+  "sale_currency": "BDT",
   "fee_amount": 10,
-  "fee_currency": "USD",
+  "fee_currency": "BDT",
   "net_earnings": 70,
-  "net_currency": "USD",
+  "net_currency": "BDT",
   "sold_at": "2026-11-17T00:00:00.000Z",
   "attributes": {}
 }
@@ -139,7 +139,7 @@ The backend calls the `record_sale` database function. It updates the authentica
 {
   "marketplace_id": "<uuid>",
   "sale_price": 100,
-  "currency": "USD"
+  "currency": "BDT"
 }
 ```
 
@@ -153,7 +153,7 @@ When a rule is unavailable, the client may send `manual_percentage`; the respons
 - `GET /api/v1/estimates/:id`
 - `GET /api/v1/pricing/history?item_id=:id&page=1&limit=25`
 
-The estimate request accepts `{ "currency": "USD", "purchase_price": 20, "marketplace_id": null,
+The estimate request accepts `{ "currency": "BDT", "purchase_price": 20, "marketplace_id": null,
 "force": false }`. The item must have been reviewed by the user. Repeated requests within one
 minute return the cached estimate unless `force` is true. Currency changes request a new estimate.
 Every response includes `ai_mode`, `data_source`, `model_id`, `prompt_version`, `market_data_status`,
@@ -245,7 +245,7 @@ and observations with source/timestamps. Without observations the honest UI stat
 market data connected yet.”
 
 Generation accepts `{ "item_id": "<inventory-or-confirmed-item-uuid>", "marketplace_id": "<uuid>",
-"currency": "USD", "tone": "concise", "notes": "optional confirmed facts", "asking_price": 30 }`.
+"currency": "BDT", "tone": "concise", "notes": "optional confirmed facts", "asking_price": 30 }`.
 It returns an unsaved draft. The item must be confirmed and the price must come from the latest
 estimate or an explicit user-entered price. Generation is guarded against rapid duplicate calls.
 The response includes `ai_mode`; `mock` explicitly means no Gemini call was made.

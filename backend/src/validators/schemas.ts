@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const uuid = z.string().uuid();
-const currency = z.string().regex(/^[A-Z]{3}$/, 'Currency must be a three-letter uppercase code.');
+const currency = z.literal('BDT', { error: 'Currency must be BDT.' });
 const jsonObject = z.record(z.string(), z.unknown());
 
 export const idParamsSchema = z.object({ id: uuid }).strict();

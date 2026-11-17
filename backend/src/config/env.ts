@@ -9,7 +9,7 @@ loadDotenv();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   CORS_ORIGIN: z.string().min(1),
   JSON_BODY_LIMIT: z.string().min(1).default('1mb'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900000),

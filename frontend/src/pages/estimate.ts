@@ -12,8 +12,8 @@ interface EstimatePageOptions {
 }
 
 function demo(state: AppState): string {
-  const fee = state.currency === 'USD' ? 10 : 9;
-  return `${renderPageHeader('Resale price estimate', 'Keychron K2 mechanical keyboard.', { demoPill: true, actions: `<label class="currency-control"><span>Currency</span><select data-currency aria-label="Estimate currency">${['USD', 'EUR', 'GBP'].map((c) => `<option${c === state.currency ? ' selected' : ''}>${c}</option>`).join('')}</select></label>` })}
+  const fee = 10;
+  return `${renderPageHeader('Resale price estimate', 'Keychron K2 mechanical keyboard.', { demoPill: true, actions: '<span class="currency-control">Currency: BDT (৳)</span>' })}
   <section class="estimate-cards" aria-label="Demo price estimates"><article class="estimate-card"><span>Low estimate</span><strong>${formatMoney(55, state.currency)}</strong></article><article class="estimate-card is-typical"><span>Typical market price</span><strong>${formatMoney(79, state.currency)}</strong></article><article class="estimate-card"><span>High estimate</span><strong>${formatMoney(95, state.currency)}</strong></article></section>
   <article class="card price-range-card"><div class="card-heading"><h2>Price range</h2></div><div class="range-bar"><span style="width:58%"></span></div><dl class="money-list"><div><dt>Suggested selling price</dt><dd>${formatMoney(79, state.currency)}</dd></div><div><dt>Estimated marketplace fees</dt><dd>-${formatMoney(fee, state.currency)}</dd></div><div><dt>Estimated net earnings</dt><dd>${formatMoney(79 - fee, state.currency)}</dd></div></dl></article>
   <section class="estimate-detail-grid"><article class="card detail-card"><div class="card-heading"><h2>Factors affecting the price</h2></div><ul class="factor-list"><li><span>Condition: light wear</span><b>-5%</b></li><li><span>Original box included</span><b>+4%</b></li><li><span>Model age</span><b>-8%</b></li></ul></article><article class="card detail-card methodology-card"><div class="card-heading"><h2>How this was estimated</h2></div><p>Demo data is shown for design preview only. Live marketplace data was NOT used.</p><p class="last-updated">Last updated: Nov 17, 2026</p></article></section>`;
@@ -23,7 +23,7 @@ export function renderEstimatePage(state: AppState, options?: EstimatePageOption
   if (!options || options.demoMode) return demo(state);
   const estimate = options.estimate;
   const title = escapeHtml(options.item?.name ?? 'Product estimate');
-  const actions = `<label class="currency-control"><span>Currency</span><select data-estimate-currency aria-label="Estimate currency">${['USD', 'EUR', 'GBP'].map((c) => `<option value="${c}"${c === state.currency ? ' selected' : ''}>${c}</option>`).join('')}</select></label>`;
+  const actions = '<span class="currency-control">Currency: BDT (৳)</span>';
   if (options.loading) return `${renderPageHeader('Resale price estimate', title, { actions })}<article class="card estimate-loading"><div class="loading-skeleton"></div><div class="loading-skeleton short"></div><p>Preparing an AI preliminary estimate…</p></article>`;
   if (options.error || !estimate) return `${renderPageHeader('Resale price estimate', title, { actions })}<article class="card empty-state"><h2>Estimate unavailable</h2><p>${escapeHtml(options.error ?? 'Confirm the item details before estimating.')}</p><button class="button button-primary" type="button" data-action="retry-estimate">Retry estimate</button></article>`;
   const low = Number(estimate.low); const typical = Number(estimate.typical); const high = Number(estimate.high); const suggested = Number(options.suggestedPrice || estimate.suggested_price || estimate.suggested_selling_price || typical); const fee = options.fee?.fee_amount ?? Number(estimate.estimated_fee_amount ?? 0); const factors = Array.isArray(estimate.factors) ? estimate.factors : estimate.factors.items ?? [];

@@ -43,7 +43,7 @@ const demoData: DashboardView = {
 };
 
 function money(value: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT', maximumFractionDigits: 0 }).format(value);
 }
 
 function renderList(rows: Array<{ label: string; time: string }>, empty: string): string {

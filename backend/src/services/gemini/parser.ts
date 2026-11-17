@@ -46,7 +46,7 @@ export const priceEstimateSchema = z.object({
   typical: z.number().finite().positive(),
   high: z.number().finite().positive(),
   suggested_selling_price: z.number().finite().positive(),
-  currency: z.string().regex(/^[A-Z]{3}$/),
+  currency: z.literal('BDT'),
   explanation: z.string().trim().min(1).max(4000),
   factors: z.array(priceFactorSchema).max(12).default([]),
   methodology: z.string().trim().min(1).max(4000),

@@ -61,7 +61,7 @@ declare
 begin
   if exists (select 1 from auth.users where id = demo_user_id) then
     insert into public.profiles (id, display_name, default_currency, preferences)
-    values (demo_user_id, 'Demo Reseller', 'USD', '{"demo": true}'::jsonb)
+    values (demo_user_id, 'Demo Reseller', 'BDT', '{"demo": true}'::jsonb)
     on conflict (id) do update set
       display_name = excluded.display_name,
       preferences = excluded.preferences;
@@ -88,7 +88,7 @@ begin
       factors, methodology
     ) values (
       demo_item_id, demo_scan_id, demo_user_id, 55, 79, 95,
-      79, 'USD', 'demo_ai_preliminary', false,
+      79, 'BDT', 'demo_ai_preliminary', false,
       '{"demo": true}'::jsonb,
       'DEMO ONLY. AI preliminary estimate; live market data was not used.'
     ) returning id into demo_estimate_id;
@@ -99,7 +99,7 @@ begin
       attributes
     ) values (
       demo_user_id, demo_item_id, demo_estimate_id, demo_category_id, demo_brand_id,
-      'Mechanical keyboard (DEMO)', 'Good, light wear', 79, 'USD',
+      'Mechanical keyboard (DEMO)', 'Good, light wear', 79, 'BDT',
       '{"demo": true}'::jsonb
     );
   end if;
