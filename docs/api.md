@@ -218,6 +218,32 @@ always derived from the verified bearer token.
 - `PATCH /api/v1/listings/:id`
 - `DELETE /api/v1/listings/:id`
 
+### Phase 9 inventory, scans, fees, analytics, and guides
+
+`GET /api/v1/inventory` accepts owner-scoped `search`, `status`, `condition`, `category_id`,
+`sort`, and `order` filters. Inventory rows may include a signed `thumbnail_url`; purchase cost,
+estimated value, listing price, and actual sale price are separate fields. `PATCH` supports archive
+and restore, while `DELETE` requires a user confirmation in the UI.
+
+`GET /api/v1/scans` accepts bounded `status` and `search` filters. `DELETE /api/v1/scans/:id`
+removes the owner’s private Storage files before deleting the scan. `POST /api/v1/sales` continues
+to use the atomic `record_sale` function; shipping/payment details are validated and kept in sale
+attributes until dedicated columns are needed.
+
+`POST /api/v1/fees/calculate` accepts `purchase_cost`, `shipping_cost`,
+`payment_processing_percentage`, and an optional `manual_percentage`. It returns fixed-cent
+`total_expenses`, `net_earnings`, and `profit_margin` plus fee-rule `source` and `verified_at`.
+Missing or placeholder rules are marked unverified and never presented as current rates.
+
+`GET /api/v1/analytics/dashboard?date_from=<ISO>&date_to=<ISO>` returns real inventory, sales,
+audit activity, monthly sales, status distribution, category performance, recent sales, and
+currency-grouped totals. Different currencies are not silently summed. The resale-index endpoint
+remains `501` because no authorized market-data provider is configured.
+
+`GET /api/v1/price-guides?page=1&limit=25&category_id=<uuid>` shows the user’s own saved estimates
+and observations with source/timestamps. Without observations the honest UI state is “No verified
+market data connected yet.”
+
 Generation accepts `{ "item_id": "<inventory-or-confirmed-item-uuid>", "marketplace_id": "<uuid>",
 "currency": "USD", "tone": "concise", "notes": "optional confirmed facts", "asking_price": 30 }`.
 It returns an unsaved draft. The item must be confirmed and the price must come from the latest

@@ -84,4 +84,25 @@ export interface AppState {
   listingCopyMessage: '' | 'title' | 'description' | 'all';
   listingTitleMaxLength: number;
   listingSaved: boolean;
+  inventoryItems: import('../services/api').InventoryItem[];
+  inventoryLoading: boolean;
+  inventoryError: string;
+  inventorySearch: string;
+  inventoryStatus: string;
+  inventoryCondition: string;
+  inventorySort: string;
+  inventorySelected?: import('../services/api').InventoryItem | null;
+  savedScans: import('../services/api').ScanResponse[];
+  savedScansLoading: boolean;
+  savedScansError: string;
+  savedScansStatus: string;
+  feeResult?: import('../services/api').FeeCalculation;
+  feeLoading: boolean;
+  feeError: string;
+  analyticsData?: import('../services/api').AnalyticsDashboard;
+  analyticsLoading: boolean;
+  analyticsError: string;
+  priceGuides: import('../services/api').PriceGuide[];
+  priceGuidesLoading: boolean;
+  priceGuidesError: string;
 }

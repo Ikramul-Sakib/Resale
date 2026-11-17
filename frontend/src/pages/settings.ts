@@ -36,6 +36,11 @@ export function renderSettingsPage(options: SettingsOptions): string {
           <button class="button button-secondary" type="submit"${options.passwordSaving ? ' disabled' : ''}>${options.passwordSaving ? 'Updating…' : 'Change password'}</button>
         </form>
       </article>
+      <article class="card settings-card">
+        <div class="card-heading"><h2>Account access</h2></div>
+        <p class="empty-copy">Your account data is protected by Supabase Auth. Account deletion is not enabled until a server-side cleanup workflow is available.</p>
+        <button class="button button-secondary" type="button" data-action="logout">Sign out</button>
+      </article>
     </section>
   `;
 }

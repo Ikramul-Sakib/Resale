@@ -13,8 +13,9 @@ export const paginationSchema = z.object({
 export const inventoryListSchema = paginationSchema.extend({
   search: z.string().trim().max(100).optional(),
   status: z.enum(['owned', 'listed', 'sold', 'archived']).optional(),
+  condition: z.string().trim().max(100).optional(),
   category_id: uuid.optional(),
-  sort: z.enum(['created_at', 'updated_at', 'item_name', 'status', 'estimated_value']).default('created_at'),
+  sort: z.enum(['created_at', 'updated_at', 'item_name', 'status', 'estimated_value', 'purchase_price']).default('created_at'),
   order: z.enum(['asc', 'desc']).default('desc'),
 }).strict();
 
@@ -39,6 +40,8 @@ export const inventoryPatchSchema = inventoryCreateSchema.partial().strict();
 
 export const salesListSchema = paginationSchema.extend({
   inventory_item_id: uuid.optional(),
+  date_from: z.string().datetime().optional(),
+  date_to: z.string().datetime().optional(),
   sort: z.enum(['sold_at', 'created_at', 'sale_price']).default('sold_at'),
   order: z.enum(['asc', 'desc']).default('desc'),
 }).strict();
@@ -60,6 +63,9 @@ export const feeCalculationSchema = z.object({
   marketplace_id: uuid,
   sale_price: z.number().positive(),
   currency,
+  purchase_cost: z.number().nonnegative().default(0),
+  shipping_cost: z.number().nonnegative().default(0),
+  payment_processing_percentage: z.number().min(0).max(100).default(0),
   manual_percentage: z.number().min(0).max(100).optional(),
 }).strict();
 
@@ -71,6 +77,8 @@ export const estimateCreateSchema = z.object({
 }).strict();
 
 export const pricingHistorySchema = paginationSchema.extend({ item_id: uuid.optional() }).strict();
+export const analyticsQuerySchema = z.object({ date_from: z.string().datetime().optional(), date_to: z.string().datetime().optional() }).strict();
+export const priceGuideSchema = paginationSchema.extend({ category_id: uuid.optional() }).strict();
 
 export const listingListSchema = paginationSchema.extend({
   item_id: uuid.optional(),
@@ -119,3 +127,4 @@ export const itemPatchSchema = z.object({
 
 export const stubRetrySchema = z.object({}).strict();
 export const scanSourceSchema = z.object({ source: z.enum(['upload', 'camera']).default('upload') }).strict();
+export const scanListSchema = paginationSchema.extend({ status: z.enum(['uploaded', 'identifying', 'identified', 'estimating', 'completed', 'failed']).optional(), search: z.string().trim().max(100).optional() }).strict();

@@ -5,12 +5,14 @@ export interface PaginationOptions {
   page: number;
   limit: number;
 }
+export interface ScanListOptions extends PaginationOptions { status?: ScanRecord['status']; search?: string; }
 
 export interface InventoryListOptions extends PaginationOptions {
   search?: string;
   status?: InventoryItem['status'];
+  condition?: string;
   category_id?: string;
-  sort: 'created_at' | 'updated_at' | 'item_name' | 'status' | 'estimated_value';
+  sort: 'created_at' | 'updated_at' | 'item_name' | 'status' | 'estimated_value' | 'purchase_price';
   order: 'asc' | 'desc';
 }
 
@@ -22,6 +24,8 @@ export type InventoryPatchInput = Partial<InventoryCreateInput>;
 
 export interface SalesListOptions extends PaginationOptions {
   inventory_item_id?: string;
+  date_from?: string;
+  date_to?: string;
   sort: 'sold_at' | 'created_at' | 'sale_price';
   order: 'asc' | 'desc';
 }
@@ -43,6 +47,9 @@ export interface FeeCalculationInput {
   marketplace_id: string;
   sale_price: number;
   currency: string;
+  purchase_cost?: number;
+  shipping_cost?: number;
+  payment_processing_percentage?: number;
   manual_percentage?: number;
 }
 
@@ -51,6 +58,12 @@ export interface FeeCalculationResult {
   sale_price: number;
   currency: string;
   fee_amount: number;
+  payment_processing_fee?: number;
+  purchase_cost?: number;
+  shipping_cost?: number;
+  total_expenses?: number;
+  net_earnings?: number;
+  profit_margin?: number | null;
   status?: 'verified' | 'user_entered_unverified';
   rule: Omit<Pick<FeeRule, 'id' | 'name' | 'fee_type' | 'source' | 'verified_at' | 'percentage_rate' | 'fixed_amount' | 'currency'>, 'id'> & { id: string | null };
 }
@@ -104,8 +117,20 @@ export interface AnalyticsDashboard {
   sales: {
     count: number;
     net_earnings: number;
+    revenue_by_currency?: Record<string, number>;
+    profit_by_currency?: Record<string, number>;
   };
+  inventory_value_by_currency?: Record<string, number>;
+  monthly_sales?: Array<{ month: string; revenue_by_currency: Record<string, number>; count: number }>;
+  status_distribution?: Array<{ status: InventoryItem['status']; count: number }>;
+  category_performance?: Array<{ category: string; count: number; revenue_by_currency: Record<string, number> }>;
+  recent_sales?: Array<Record<string, unknown>>;
+  activity?: Array<Record<string, unknown>>;
+  date_from?: string | null;
+  date_to?: string | null;
 }
+
+export interface PriceGuideOptions extends PaginationOptions { category_id?: string; }
 
 export interface ItemPatchInput {
   name?: string;
@@ -195,10 +220,10 @@ export interface Repositories {
     calculate(input: FeeCalculationInput): Promise<FeeCalculationResult>;
   };
   analytics: {
-    dashboard(userId: string): Promise<AnalyticsDashboard>;
+    dashboard(userId: string, options?: { date_from?: string; date_to?: string }): Promise<AnalyticsDashboard>;
   };
   scans: {
-    list(userId: string, options: PaginationOptions): Promise<Page<Record<string, unknown>>>;
+    list(userId: string, options: ScanListOptions): Promise<Page<Record<string, unknown>>>;
     getById(userId: string, id: string): Promise<Record<string, unknown>>;
     create(userId: string, source: 'upload' | 'camera'): Promise<ScanRecord>;
     addImage(userId: string, input: Omit<ScanImageRecord, 'id' | 'created_at' | 'updated_at' | 'signed_url'>): Promise<ScanImageRecord>;
@@ -226,6 +251,7 @@ export interface Repositories {
   };
   audit: {
     create(userId: string, action: string, entityType: string, entityId: string, metadata: Record<string, unknown>): Promise<void>;
+    recent(userId: string, limit: number): Promise<Array<Record<string, unknown>>>;
   };
   pricing: {
     history(userId: string, options: PricingHistoryOptions): Promise<Page<Record<string, unknown>>>;
@@ -235,5 +261,8 @@ export interface Repositories {
     findRecent(userId: string, itemId: string, currency: string, since: string): Promise<Record<string, unknown> | null>;
     findLatestForItem(userId: string, itemId: string, currency?: string): Promise<Record<string, unknown> | null>;
     getById(userId: string, id: string): Promise<Record<string, unknown>>;
+  };
+  priceGuides: {
+    list(userId: string, options: PriceGuideOptions): Promise<Page<Record<string, unknown>>>;
   };
 }

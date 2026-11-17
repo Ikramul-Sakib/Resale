@@ -177,3 +177,34 @@ test('shows a failed listing generation and retries it', async ({ page }) => {
   await page.getByRole('button', { name: 'Retry' }).click();
   await expect(page.getByRole('heading', { name: 'Review draft' })).toBeVisible();
 });
+
+test('manages inventory, records a sale, archives, and deletes', async ({ page }) => {
+  await login(page);
+  await page.goto('/inventory');
+  await page.getByRole('button', { name: 'Add item' }).click();
+  await page.getByLabel('Name').fill('Phase 9 test item');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Phase 9 test item')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit' }).last().click();
+  await page.getByRole('button', { name: 'Mark as sold' }).click();
+  await page.locator('[data-sale-form] input[name="sale_price"]').fill('25');
+  await page.getByRole('button', { name: 'Save sale' }).click();
+  await expect(page.getByText('Sale recorded and item marked sold.')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit' }).last().click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByText('Phase 9 test item')).toHaveCount(0);
+});
+
+test('renders fee calculator, analytics, and honest price-guide states', async ({ page }) => {
+  await login(page);
+  await page.goto('/fee-calculator');
+  await page.locator('[data-fee-form] input[name="sale_price"]').fill('100');
+  await page.locator('[data-fee-form] input[name="manual_percentage"]').fill('12.5');
+  await page.getByRole('button', { name: 'Calculate fees' }).click();
+  await expect(page.getByText('User-entered, unverified')).toBeVisible();
+  await page.goto('/analytics');
+  await expect(page.getByRole('heading', { name: 'Monthly sales' })).toBeVisible();
+  await page.goto('/price-guides');
+  await expect(page.getByText('No verified market data connected yet.').first()).toBeVisible();
+});

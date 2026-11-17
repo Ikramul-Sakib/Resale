@@ -1,4 +1,5 @@
 import { createIcons, icons } from 'lucide';
+import { Chart } from 'chart.js/auto';
 import { renderLayout } from './components/layout';
 import { renderDashboardPage, type DashboardView } from './pages/dashboard';
 import { renderEstimatePage } from './pages/estimate';
@@ -7,6 +8,11 @@ import { renderPlaceholderPage } from './pages/placeholder';
 import { renderScanPage } from './pages/scan';
 import { renderSettingsPage } from './pages/settings';
 import { renderListingGeneratorPage } from './pages/listing-generator';
+import { renderInventoryPage } from './pages/inventory';
+import { renderSavedScansPage } from './pages/saved-scans';
+import { renderFeeCalculatorPage } from './pages/fee-calculator';
+import { renderAnalyticsPage } from './pages/analytics';
+import { renderPriceGuidesPage } from './pages/price-guides';
 import { renderAuthLoadingPage, renderForgotPasswordPage, renderLoginPage, renderRegisterPage, renderResetPasswordPage } from './pages/auth';
 import { consumeReturnPath, guardRoute, isPublicPath, navigate, normalizePath, rememberReturnPath, type AppPath } from './router';
 import { ApiError, getApiClient } from './services/api';
@@ -31,6 +37,7 @@ const state: AppState = {
   identification: { name: 'Mechanical keyboard, 75% layout', brand: 'Keychron', model: 'K2', category: 'Computer accessories', condition: 'Good, light wear', attributes: 'Wireless, hot-swappable, RGB' },
   estimateLoading: false, estimateError: '', marketplaces: [], estimateMarketplaceId: '', suggestedPriceInput: '', manualFeePercentage: '', inventorySaving: false,
   listingLoading: false, listingError: '', listingDrafts: [], listingInventory: [], listingItemId: '', listingInventoryItemId: '', listingMarketplaceId: '', listingTone: 'neutral', listingNotes: '', listingPrice: '', listingDirty: false, listingSaving: false, listingCopyMessage: '', listingTitleMaxLength: 120, listingSaved: false,
+  inventoryItems: [], inventoryLoading: false, inventoryError: '', inventorySearch: '', inventoryStatus: '', inventoryCondition: '', inventorySort: 'updated_at', inventorySelected: null, savedScans: [], savedScansLoading: false, savedScansError: '', savedScansStatus: '', feeResult: undefined, feeLoading: false, feeError: '', analyticsData: undefined, analyticsLoading: false, analyticsError: '', priceGuides: [], priceGuidesLoading: false, priceGuidesError: '',
 };
 
 let authService: AuthService | undefined;
@@ -39,6 +46,8 @@ let toastTimer: number | undefined;
 let dashboardRequestInFlight = false;
 let estimateRequestInFlight = false;
 let listingRequestInFlight = false;
+let pageRequestInFlight = false;
+let analyticsCharts: Chart[] = [];
 
 function getService(): AuthService { if (!authService) authService = getAuthService(); return authService; }
 function isAuthenticated(): boolean { return state.authStatus === 'authenticated' && Boolean(state.user); }
@@ -52,6 +61,11 @@ function renderProtectedContent(): string {
   if (state.screen === 'identification') return demoSession ? renderIdentificationPage(state.identification) : state.scanResult?.identified_item ? renderIdentificationPage(state.scanResult.identified_item, state.scanResult.images?.[0]?.signed_url, state.scanResult.ai_mode, state.scanResult.identification_empty, state.itemSaving) : '<article class="card phase-card"><h2>No identification yet</h2><p>Upload a product photo to begin.</p></article>';
   if (state.screen === 'estimate') return renderEstimatePage(state, { demoMode: demoSession, loading: state.estimateLoading, error: state.estimateError, estimate: state.estimate?.estimate, item: state.scanResult?.identified_item, imageUrl: state.scanResult?.images?.[0]?.signed_url, aiMode: state.estimate?.ai_mode, fee: state.estimate?.fee, marketplaces: state.marketplaces, marketplaceId: state.estimateMarketplaceId, suggestedPrice: state.suggestedPriceInput, manualFeePercentage: state.manualFeePercentage, savingInventory: state.inventorySaving });
   if (state.screen === 'listing-generator') return renderListingGeneratorPage(state, { demoMode: demoSession, loading: state.listingLoading, error: state.listingError, generated: state.listingGenerated, aiMode: state.listingAiMode, drafts: state.listingDrafts, inventory: state.listingInventory, marketplaces: state.marketplaces, selectedItemId: state.listingItemId, selectedMarketplaceId: state.listingMarketplaceId, tone: state.listingTone, notes: state.listingNotes, price: state.listingPrice, dirty: state.listingDirty, saving: state.listingSaving, copyMessage: state.listingCopyMessage, titleMaxLength: state.listingTitleMaxLength, inventoryItemStatus: state.listingInventory.find((item) => item.id === state.listingInventoryItemId)?.status, saved: state.listingSaved });
+  if (state.screen === 'inventory') return renderInventoryPage({ items: state.inventoryItems, loading: state.inventoryLoading, error: state.inventoryError, search: state.inventorySearch, status: state.inventoryStatus, condition: state.inventoryCondition, sort: state.inventorySort, selected: state.inventorySelected, marketplaces: state.marketplaces });
+  if (state.screen === 'saved-scans') return renderSavedScansPage({ scans: state.savedScans, loading: state.savedScansLoading, error: state.savedScansError, status: state.savedScansStatus });
+  if (state.screen === 'fee-calculator') return renderFeeCalculatorPage({ marketplaces: state.marketplaces, result: state.feeResult, loading: state.feeLoading, error: state.feeError });
+  if (state.screen === 'analytics') return renderAnalyticsPage({ data: state.analyticsData, loading: state.analyticsLoading, error: state.analyticsError });
+  if (state.screen === 'price-guides') return renderPriceGuidesPage({ guides: state.priceGuides, loading: state.priceGuidesLoading, error: state.priceGuidesError });
   if (state.screen === 'settings' && isAuthenticated()) return renderSettingsPage({ email: state.user?.email ?? '', profile: state.profile, saving: state.settingsSaving, passwordSaving: state.passwordSaving, message: state.authSuccess, error: state.authError });
   return renderPlaceholderPage(state.screen as Exclude<ScreenId, 'dashboard' | 'scan' | 'identification' | 'estimate'>, demoSession);
 }
@@ -244,13 +258,47 @@ async function loadDashboard(): Promise<void> {
   try {
     const api = getApiClient();
     const [analytics, scans] = await Promise.all([
-      api.get<{ inventory: { owned: number; listed: number; sold: number; estimated_value: number }; sales: { net_earnings: number } }>('/analytics/dashboard'),
+      api.get<import('./services/api').AnalyticsDashboard>('/analytics/dashboard'),
       api.get<{ data: Array<{ id: string; status: string; created_at: string }>; total: number }>('/scans?page=1&limit=3'),
     ]);
     const recentScans = scans.data.map((scan) => ({ label: `Scan ${scan.id.slice(0, 8)} · ${scan.status}`, time: new Date(scan.created_at).toLocaleDateString() }));
-    state.dashboardData = { scannedItems: scans.total, inventoryValue: Number(analytics.inventory.estimated_value ?? 0), listedItems: analytics.inventory.listed, soldItems: analytics.inventory.sold, totalProfit: Number(analytics.sales.net_earnings ?? 0), recentScans, owned: analytics.inventory.owned, listed: analytics.inventory.listed, sold: analytics.inventory.sold, activity: [] };
+    state.dashboardData = { scannedItems: scans.total, inventoryValue: Number(analytics.inventory.estimated_value ?? 0), listedItems: analytics.inventory.listed, soldItems: analytics.inventory.sold, totalProfit: Number(analytics.sales.net_earnings ?? 0), recentScans, owned: analytics.inventory.owned, listed: analytics.inventory.listed, sold: analytics.inventory.sold, activity: (analytics.activity ?? []).map((row) => ({ label: `${row.action} · ${row.entity_type}`, time: new Date(row.created_at).toLocaleDateString() })) };
   } catch (error) { if (!(error instanceof ApiError && error.status === 401)) state.authError = 'Your dashboard data could not be loaded. Please try again.'; }
   finally { dashboardRequestInFlight = false; state.dashboardLoading = false; render(); }
+}
+
+async function loadPhase9Page(): Promise<void> {
+  if (!isAuthenticated() || pageRequestInFlight || !['inventory', 'saved-scans', 'fee-calculator', 'analytics', 'price-guides'].includes(state.screen)) return;
+  const api = getApiClient(); pageRequestInFlight = true;
+  try {
+    if (state.screen === 'inventory') {
+      state.inventoryLoading = true; render();
+      const query = new URLSearchParams({ page: '1', limit: '50', sort: state.inventorySort, order: 'desc' }); if (state.inventorySearch) query.set('search', state.inventorySearch); if (state.inventoryStatus) query.set('status', state.inventoryStatus); if (state.inventoryCondition) query.set('condition', state.inventoryCondition);
+      state.inventoryItems = (await api.get<{ data: import('./services/api').InventoryItem[] }>(`/inventory?${query}`)).data;
+    } else if (state.screen === 'saved-scans') {
+      state.savedScansLoading = true; render(); const q = new URLSearchParams({ page: '1', limit: '50' }); if (state.savedScansStatus) q.set('status', state.savedScansStatus); state.savedScans = (await api.get<{ data: import('./services/api').ScanResponse[] }>(`/scans?${q}`)).data;
+    } else if (state.screen === 'fee-calculator') {
+      await loadMarketplaces();
+    } else if (state.screen === 'analytics') {
+      state.analyticsLoading = true; render(); state.analyticsData = await api.get<import('./services/api').AnalyticsDashboard>('/analytics/dashboard');
+    } else if (state.screen === 'price-guides') {
+      state.priceGuidesLoading = true; render(); state.priceGuides = (await api.get<{ data: import('./services/api').PriceGuide[] }>('/price-guides?page=1&limit=50')).data;
+    }
+  } catch (error) {
+    const message = error instanceof ApiError ? error.message : 'This page could not be loaded.';
+    if (state.screen === 'inventory') state.inventoryError = message; else if (state.screen === 'saved-scans') state.savedScansError = message; else if (state.screen === 'fee-calculator') state.feeError = message; else if (state.screen === 'analytics') state.analyticsError = message; else state.priceGuidesError = message;
+  } finally {
+    state.inventoryLoading = false; state.savedScansLoading = false; state.analyticsLoading = false; state.priceGuidesLoading = false; pageRequestInFlight = false; render();
+    if (state.screen === 'analytics' && state.analyticsData) renderAnalyticsCharts();
+  }
+}
+
+function renderAnalyticsCharts(): void {
+  analyticsCharts.forEach((chart) => chart.destroy()); analyticsCharts = [];
+  const data = state.analyticsData; if (!data) return;
+  const monthly = document.querySelector<HTMLCanvasElement>('#monthly-sales-chart'); const statuses = document.querySelector<HTMLCanvasElement>('#inventory-status-chart');
+  if (monthly) analyticsCharts.push(new Chart(monthly, { type: 'line', data: { labels: (data.monthly_sales ?? []).map((row) => row.month), datasets: Object.keys(data.monthly_sales?.[0]?.revenue_by_currency ?? {}).map((currency) => ({ label: currency, data: (data.monthly_sales ?? []).map((row) => row.revenue_by_currency[currency] ?? 0), borderColor: '#4f46e5', tension: .25 })) }, options: { responsive: true } }));
+  if (statuses) analyticsCharts.push(new Chart(statuses, { type: 'doughnut', data: { labels: (data.status_distribution ?? []).map((row) => row.status), datasets: [{ data: (data.status_distribution ?? []).map((row) => row.count), backgroundColor: ['#4f46e5', '#7c83f5', '#f0b429', '#aab2c1'] }] }, options: { responsive: true } }));
 }
 
 function addSelectedFiles(incoming: File[]): void {
@@ -311,6 +359,20 @@ function handleAction(action: string, element: HTMLElement): void {
   if (action === 'open-draft') { openDraft(element.dataset.draftId ?? ''); return; }
   if (action === 'delete-draft') { void deleteDraft(element.dataset.draftId ?? ''); return; }
   if (action === 'save-inventory') { if (DEMO_MODE && !isAuthenticated()) { showToast('Demo action: inventory saving is connected in a later phase.'); return; } void saveInventory(); }
+  if (action === 'add-inventory') { state.inventorySelected = { id: '', item_name: '', status: 'owned', condition: '', attributes: {}, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }; render(); return; }
+  if (action === 'close-inventory') { state.inventorySelected = null; render(); return; }
+  if (action === 'edit-inventory') { void openInventory(element.dataset.id ?? ''); return; }
+  if (action === 'retry-inventory') { state.inventoryError = ''; void loadPhase9Page(); return; }
+  if (action === 'sell-inventory') { const form = document.querySelector<HTMLFormElement>('[data-sale-form]'); if (form) form.hidden = false; return; }
+  if (action === 'cancel-sale') { const form = document.querySelector<HTMLFormElement>('[data-sale-form]'); if (form) form.hidden = true; return; }
+  if (action === 'archive-inventory' || action === 'restore-inventory') { void setInventoryStatus(action === 'archive-inventory' ? 'archived' : 'owned'); return; }
+  if (action === 'delete-inventory') { if (window.confirm('Delete this inventory item? This cannot be undone.')) void deleteInventory(); return; }
+  if (action === 'retry-saved-scans') { state.savedScansError = ''; void loadPhase9Page(); return; }
+  if (action === 'retry-saved-scan') { void retrySavedScan(element.dataset.id ?? ''); return; }
+  if (action === 'open-saved-scan') { void openSavedScan(element.dataset.id ?? ''); return; }
+  if (action === 'delete-saved-scan') { if (window.confirm('Delete this scan and its private images?')) void deleteSavedScan(element.dataset.id ?? ''); return; }
+  if (action === 'retry-analytics') { state.analyticsError = ''; void loadPhase9Page(); return; }
+  if (action === 'retry-price-guides') { state.priceGuidesError = ''; void loadPhase9Page(); return; }
 }
 
 function bindEvents(): void {
@@ -319,6 +381,12 @@ function bindEvents(): void {
   document.querySelector<HTMLFormElement>('[data-auth-form]')?.addEventListener('submit', (event) => { event.preventDefault(); const form = event.currentTarget as HTMLFormElement; void handleAuthForm(form, form.dataset.authForm ?? ''); });
   document.querySelector<HTMLFormElement>('[data-settings-form]')?.addEventListener('submit', (event) => { event.preventDefault(); void saveSettings(event.currentTarget as HTMLFormElement); });
   document.querySelector<HTMLFormElement>('[data-password-form]')?.addEventListener('submit', (event) => { event.preventDefault(); void savePassword(event.currentTarget as HTMLFormElement); });
+  document.querySelector<HTMLFormElement>('[data-inventory-filter]')?.addEventListener('submit', (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget as HTMLFormElement)); state.inventorySearch = String(values.search ?? ''); state.inventoryStatus = String(values.status ?? ''); state.inventoryCondition = String(values.condition ?? ''); state.inventorySort = String(values.sort ?? 'updated_at'); void loadPhase9Page(); });
+  document.querySelector<HTMLFormElement>('[data-inventory-edit]')?.addEventListener('submit', (event) => { event.preventDefault(); void saveInventoryItem(event.currentTarget as HTMLFormElement); });
+  document.querySelector<HTMLFormElement>('[data-sale-form]')?.addEventListener('submit', (event) => { event.preventDefault(); void recordInventorySale(event.currentTarget as HTMLFormElement); });
+  document.querySelector<HTMLFormElement>('[data-scan-filter]')?.addEventListener('submit', (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget as HTMLFormElement)); state.savedScansStatus = String(values.status ?? ''); void loadPhase9Page(); });
+  document.querySelector<HTMLFormElement>('[data-fee-form]')?.addEventListener('submit', (event) => { event.preventDefault(); void calculateStandaloneFee(event.currentTarget as HTMLFormElement); });
+  document.querySelector<HTMLFormElement>('[data-analytics-filter]')?.addEventListener('submit', (event) => { event.preventDefault(); void loadAnalyticsWithDates(event.currentTarget as HTMLFormElement); });
   document.querySelector<HTMLInputElement>('[data-file-input]')?.addEventListener('change', (event) => addFiles((event.currentTarget as HTMLInputElement).files)); document.querySelector<HTMLInputElement>('[data-camera-input]')?.addEventListener('change', (event) => addFiles((event.currentTarget as HTMLInputElement).files));
   const dropZone = document.querySelector<HTMLElement>('[data-drop-zone]'); dropZone?.addEventListener('dragover', (event) => { event.preventDefault(); dropZone.classList.add('is-dragging'); }); dropZone?.addEventListener('dragleave', () => dropZone.classList.remove('is-dragging')); dropZone?.addEventListener('drop', (event) => { event.preventDefault(); dropZone.classList.remove('is-dragging'); addFiles((event as DragEvent).dataTransfer?.files ?? null); }); dropZone?.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); document.querySelector<HTMLInputElement>('[data-file-input]')?.click(); } });
   document.querySelector<HTMLInputElement>('[data-currency]')?.addEventListener('change', (event) => { state.currency = (event.currentTarget as HTMLSelectElement).value as AppState['currency']; render(); });
@@ -337,6 +405,17 @@ function bindEvents(): void {
 
 async function saveSettings(form: HTMLFormElement): Promise<void> { const parsed = profileSchema.safeParse(Object.fromEntries(new FormData(form).entries())); clearFormState(); if (!parsed.success) { setFormErrors(parsed.error.issues); state.authError = 'Check the profile fields.'; render(); return; } state.settingsSaving = true; render(); try { state.profile = await getService().updateProfile({ display_name: parsed.data.displayName, default_currency: parsed.data.currency }); state.authSuccess = 'Profile saved.'; } catch { state.authError = 'Unable to save your profile right now.'; } finally { state.settingsSaving = false; render(); } }
 async function savePassword(form: HTMLFormElement): Promise<void> { const parsed = resetPasswordSchema.safeParse(Object.fromEntries(new FormData(form).entries())); clearFormState(); if (!parsed.success) { setFormErrors(parsed.error.issues); state.authError = 'Check the password fields.'; render(); return; } state.passwordSaving = true; render(); try { await getService().changePassword(parsed.data.password); state.authSuccess = 'Password updated.'; form.reset(); } catch { state.authError = 'Unable to change your password right now.'; } finally { state.passwordSaving = false; render(); } }
+
+async function openInventory(id: string): Promise<void> { try { state.inventorySelected = await getApiClient().get<import('./services/api').InventoryItem>(`/inventory/${id}`); render(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Inventory item could not be opened.'; render(); } }
+async function saveInventoryItem(form: HTMLFormElement): Promise<void> { const values = Object.fromEntries(new FormData(form)); const item = state.inventorySelected; if (!item) return; const attributes = { ...(item.attributes ?? {}), notes: String(values.notes ?? '').slice(0, 2000) }; try { const payload = { item_name: String(values.item_name).trim(), condition: String(values.condition || '').trim() || null, purchase_price: values.purchase_price ? Number(values.purchase_price) : null, purchase_currency: 'USD', estimated_value: values.estimated_value ? Number(values.estimated_value) : null, estimated_value_currency: 'USD', attributes }; state.inventorySelected = item.id ? await getApiClient().patch<import('./services/api').InventoryItem>(`/inventory/${item.id}`, payload) : await getApiClient().post<import('./services/api').InventoryItem>('/inventory', payload); showToast('Inventory item saved.'); state.inventorySelected = null; await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Inventory item could not be saved.'; render(); } }
+async function setInventoryStatus(status: 'owned' | 'archived'): Promise<void> { const id = state.inventorySelected?.id; if (!id) return; try { state.inventorySelected = await getApiClient().patch<import('./services/api').InventoryItem>(`/inventory/${id}`, { status }); showToast(status === 'archived' ? 'Item archived.' : 'Item restored.'); await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Status could not be updated.'; render(); } }
+async function deleteInventory(): Promise<void> { const id = state.inventorySelected?.id; if (!id) return; try { await getApiClient().request(`/inventory/${id}`, { method: 'DELETE' }); state.inventorySelected = null; showToast('Inventory item deleted.'); await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'Inventory item could not be deleted.'; render(); } }
+async function recordInventorySale(form: HTMLFormElement): Promise<void> { const item = state.inventorySelected; if (!item) return; const values = Object.fromEntries(new FormData(form)); const sale = Number(values.sale_price); const fee = Number(values.fee_amount || 0); const shipping = Number(values.shipping_cost || 0); if (!Number.isFinite(sale) || sale <= 0) { state.inventoryError = 'Enter a valid sale price.'; render(); return; } try { await getApiClient().post('/sales', { inventory_item_id: item.id, marketplace_id: String(values.marketplace_id || '') || null, sale_price: sale, sale_currency: String(values.sale_currency), fee_amount: fee + shipping, fee_currency: String(values.sale_currency), net_earnings: Math.round((sale - fee - shipping) * 100) / 100, net_currency: String(values.sale_currency), sold_at: new Date().toISOString(), attributes: { shipping_cost: shipping } }); state.inventorySelected = null; showToast('Sale recorded and item marked sold.'); await loadPhase9Page(); } catch (error) { state.inventoryError = error instanceof ApiError ? error.message : 'The sale could not be recorded.'; render(); } }
+async function openSavedScan(id: string): Promise<void> { try { state.scanResult = await getApiClient().get<import('./services/api').ScanResponse>(`/scans/${id}`); navigate('/identification'); } catch (error) { state.savedScansError = error instanceof ApiError ? error.message : 'Scan could not be opened.'; render(); } }
+async function retrySavedScan(id: string): Promise<void> { try { state.scanResult = await getApiClient().post<import('./services/api').ScanResponse>(`/scans/${id}/retry`); navigate('/identification'); } catch (error) { state.savedScansError = error instanceof ApiError ? error.message : 'Scan retry failed.'; render(); } }
+async function deleteSavedScan(id: string): Promise<void> { try { await getApiClient().request(`/scans/${id}`, { method: 'DELETE' }); showToast('Scan deleted.'); await loadPhase9Page(); } catch (error) { state.savedScansError = error instanceof ApiError ? error.message : 'Scan could not be deleted.'; render(); } }
+async function calculateStandaloneFee(form: HTMLFormElement): Promise<void> { const values = Object.fromEntries(new FormData(form)); state.feeLoading = true; state.feeError = ''; render(); try { state.feeResult = await getApiClient().post<import('./services/api').FeeCalculation>('/fees/calculate', { marketplace_id: String(values.marketplace_id), sale_price: Number(values.sale_price), purchase_cost: Number(values.purchase_cost || 0), shipping_cost: Number(values.shipping_cost || 0), currency: String(values.currency), manual_percentage: values.manual_percentage ? Number(values.manual_percentage) : undefined }); } catch (error) { state.feeError = error instanceof ApiError ? error.message : 'Fee calculation failed.'; } finally { state.feeLoading = false; render(); } }
+async function loadAnalyticsWithDates(form: HTMLFormElement): Promise<void> { const values = Object.fromEntries(new FormData(form)); const query = new URLSearchParams(); if (values.date_from) query.set('date_from', `${values.date_from}T00:00:00.000Z`); if (values.date_to) query.set('date_to', `${values.date_to}T23:59:59.999Z`); state.analyticsLoading = true; render(); try { state.analyticsData = await getApiClient().get<import('./services/api').AnalyticsDashboard>(`/analytics/dashboard?${query}`); } catch (error) { state.analyticsError = error instanceof ApiError ? error.message : 'Analytics could not be loaded.'; } finally { state.analyticsLoading = false; render(); renderAnalyticsCharts(); } }
 
 async function saveIdentification(): Promise<void> {
   const itemId = state.scanResult?.identified_item?.id;
@@ -365,10 +444,10 @@ async function saveInventory(): Promise<void> {
 }
 
 async function initialize(): Promise<void> {
-  window.addEventListener('popstate', () => { clearFormState(); render(); void loadDashboard(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); } if (state.screen === 'listing-generator') void loadListingData(); });
+  window.addEventListener('popstate', () => { clearFormState(); render(); void loadDashboard(); void loadPhase9Page(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); } if (state.screen === 'listing-generator') void loadListingData(); });
   if (DEMO_MODE) { try { authService = getAuthService(); } catch { /* Demo mode can run without Supabase variables. */ } state.authStatus = 'unauthenticated'; render(); return; }
   try { const service = getService(); setAuthContext(await service.getContext()); unsubscribeAuth = service.onAuthStateChange((context) => { setAuthContext(context); render(); void loadDashboard(); }); } catch (error) { state.authStatus = 'error'; state.authError = error instanceof Error ? error.message : 'Authentication is not configured.'; }
-  render(); void loadDashboard(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); } if (state.screen === 'listing-generator') void loadListingData();
+  render(); void loadDashboard(); void loadPhase9Page(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); } if (state.screen === 'listing-generator') void loadListingData();
 }
 
 export function startApp(): void { void initialize(); }

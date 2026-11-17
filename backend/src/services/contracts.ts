@@ -9,9 +9,10 @@ import type {
   ListingCreateInput,
   ListingPatchInput,
   ListingListOptions,
-  PaginationOptions,
+  ScanListOptions,
   EstimateRequestInput,
   PricingHistoryOptions,
+  PriceGuideOptions,
   RecordSaleInput,
   Repositories,
   SalesListOptions,
@@ -63,13 +64,17 @@ export interface Services {
     calculate(input: FeeCalculationInput): Promise<FeeCalculationResult>;
   };
   analytics: {
-    dashboard(userId: string): Promise<AnalyticsDashboard>;
+    dashboard(userId: string, options?: { date_from?: string; date_to?: string }): Promise<AnalyticsDashboard>;
+  };
+  priceGuides?: {
+    list(userId: string, options: PriceGuideOptions): Promise<Page<Record<string, unknown>>>;
   };
   scans: {
-    list(userId: string, options: PaginationOptions): Promise<Page<Record<string, unknown>>>;
+    list(userId: string, options: ScanListOptions): Promise<Page<Record<string, unknown>>>;
     get(userId: string, id: string): Promise<Record<string, unknown>>;
     create(userId: string, files: ScanUploadFile[], source: 'upload' | 'camera'): Promise<Record<string, unknown>>;
     retry(userId: string, id: string): Promise<Record<string, unknown>>;
+    delete?(userId: string, id: string): Promise<void>;
   };
   items: {
     get(userId: string, id: string): Promise<Record<string, unknown>>;
@@ -114,12 +119,14 @@ export function createServices(repositories: Repositories, scanPipeline?: ScanSe
     },
     marketplaces: { list: () => repositories.reference.listMarketplaces() },
     fees: { calculate: (input) => repositories.fees.calculate(input) },
-    analytics: { dashboard: (userId) => repositories.analytics.dashboard(userId) },
+    analytics: { dashboard: (userId, options) => repositories.analytics.dashboard(userId, options) },
+    priceGuides: { list: (userId, options) => repositories.priceGuides.list(userId, options) },
     scans: {
       list: (userId, options) => scanPipeline ? scanPipeline.list(userId, options) : repositories.scans.list(userId, options),
       get: (userId, id) => scanPipeline ? scanPipeline.get(userId, id) : repositories.scans.getById(userId, id),
       create: (userId, files, source) => scanPipeline ? scanPipeline.create(userId, files, source) : Promise.reject(new Error('Scan pipeline is not configured.')),
       retry: (userId, id) => scanPipeline ? scanPipeline.retry(userId, id) : Promise.reject(new Error('Scan pipeline is not configured.')),
+      delete: async (userId, id) => { const images = await repositories.scans.getImages(userId, id); await repositories.scans.deleteStorage(images.map((image) => image.storage_path)); await repositories.scans.deleteScan(userId, id); },
     },
     items: {
       get: (userId, id) => repositories.items.getById(userId, id),

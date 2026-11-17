@@ -1,6 +1,8 @@
-# ResaleIQ database
+# ResaleIQ database and Phase 9 reporting
 
-Phase 3 creates the Supabase PostgreSQL schema, ownership policies, and private product-image storage. The schema is designed for the REST API described in `AGENTS.md`; the Express API is intentionally not part of this phase.
+The migrations create the Supabase PostgreSQL schema, ownership policies, private product-image
+storage, and Phase 9 reporting indexes. The Express API is the trusted service-role consumer;
+browser clients never receive the service-role key.
 
 ## Local commands
 
@@ -67,7 +69,10 @@ Authenticated users can read, create, update, or delete only objects whose first
 
 ## Development seed
 
-`supabase/seed.sql` is development-only. It seeds categories, brands, and a disabled placeholder marketplace labelled `DEMO`. It conditionally inserts demo user rows only if the explicit development auth UUID already exists; it never creates an auth user and never inserts a real key or verified marketplace fee.
+`supabase/seed.sql` is development-only. It seeds categories, brands, and an active placeholder
+marketplace labelled `DEMO` so the fee calculator can be exercised without claiming a fee rule. It
+conditionally inserts demo user rows only if the explicit development auth UUID already exists; it
+never creates an auth user and never inserts a real key or verified marketplace fee.
 
 ## Tests
 
@@ -79,3 +84,14 @@ Authenticated users can read, create, update, or delete only objects whose first
 - development reference data is present.
 
 These tests must be run against the local Supabase database. No production database is targeted by this repository phase.
+
+## Phase 9 indexes and data boundaries
+
+`20261118110000_phase9_reporting_indexes.sql` adds owner-first indexes for inventory condition,
+category/status, purchase-price sorting, sales currency/date reporting, estimate history, and scan
+status/date filtering. Existing RLS covers every Phase 9 table; no new user-data table was added.
+
+The existing `record_sale` function verifies ownership, marks the inventory row sold, and inserts
+the sale atomically. Shipping and payment details are currently stored in validated sale attributes.
+Analytics groups money by currency. Price Guides show saved user estimates and observations only;
+without observation rows the correct state is “No verified market data connected yet.”

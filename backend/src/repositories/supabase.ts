@@ -21,8 +21,10 @@ import type {
   ScanImageRecord,
   ScanRecord,
   SalesListOptions,
+  ScanListOptions,
 } from './contracts.js';
 import type { IdentificationResult, ImageInput } from '../services/gemini/types.js';
+import { cents, money, percentageOf } from '../utils/money.js';
 
 function throwIfError(error: { message?: string; code?: string } | null): void {
   if (error) throw repositoryError(error);
@@ -68,12 +70,23 @@ class InventoryRepository {
       query = query.or(`item_name.ilike.%${search}%,condition.ilike.%${search}%`);
     }
     if (options.status) query = query.eq('status', options.status);
+    if (options.condition) query = query.ilike('condition', `%${escapeSearch(options.condition)}%`);
     if (options.category_id) query = query.eq('category_id', options.category_id);
     const { data, error, count } = await query
       .order(options.sort, { ascending: options.order === 'asc' })
       .range(pageOffset(options.page, options.limit), pageOffset(options.page, options.limit) + options.limit - 1);
     throwIfError(error);
-    return page(data as InventoryItem[] | null, count, options);
+    const rows = (data ?? []) as InventoryItem[];
+    const decorated = await Promise.all(rows.map(async (row) => {
+      if (!row.identified_item_id) return row;
+      const { data: item } = await this.client.from('identified_items').select('scan_id').eq('id', row.identified_item_id).eq('user_id', userId).maybeSingle();
+      if (!item?.scan_id) return row;
+      const { data: image } = await this.client.from('scan_images').select('storage_path').eq('scan_id', item.scan_id).eq('user_id', userId).order('sort_order').limit(1).maybeSingle();
+      if (!image?.storage_path) return row;
+      const { data: signed } = await this.client.storage.from('product-images').createSignedUrl(image.storage_path, 3600);
+      return { ...row, thumbnail_url: signed?.signedUrl ?? null };
+    }));
+    return page(decorated, count, options);
   }
 
   async create(userId: string, input: InventoryCreateInput): Promise<InventoryItem> {
@@ -108,6 +121,8 @@ class SalesRepository {
   async list(userId: string, options: SalesListOptions): Promise<Page<SalesRecord>> {
     let query = this.client.from('sales').select('*', { count: 'exact' }).eq('user_id', userId);
     if (options.inventory_item_id) query = query.eq('inventory_item_id', options.inventory_item_id);
+    if (options.date_from) query = query.gte('sold_at', options.date_from);
+    if (options.date_to) query = query.lte('sold_at', options.date_to);
     const { data, error, count } = await query
       .order(options.sort, { ascending: options.order === 'asc' })
       .range(pageOffset(options.page, options.limit), pageOffset(options.page, options.limit) + options.limit - 1);
@@ -165,9 +180,15 @@ class FeeRepository {
     const rule = data as FeeRule | null;
     if (!rule && input.manual_percentage === undefined) throw new AppError(422, 'FEE_RULE_UNAVAILABLE', 'No verified fee rule is configured for this marketplace.');
     if (!rule && input.manual_percentage !== undefined) {
-      const feeAmount = Math.round(input.sale_price * (input.manual_percentage / 100) * 100) / 100;
+      const saleCents = cents(input.sale_price);
+      const feeAmount = money(percentageOf(saleCents, input.manual_percentage));
+      const payment = money(percentageOf(saleCents, input.payment_processing_percentage ?? 0));
+      const purchase = money(cents(input.purchase_cost));
+      const shipping = money(cents(input.shipping_cost));
+      const total = cents(feeAmount) + cents(payment) + cents(purchase) + cents(shipping);
       return {
         marketplace_id: input.marketplace_id, sale_price: input.sale_price, currency: input.currency, fee_amount: feeAmount,
+        payment_processing_fee: payment, purchase_cost: purchase, shipping_cost: shipping, total_expenses: money(total), net_earnings: money(saleCents - total), profit_margin: input.sale_price ? Number(((Number(saleCents - total) / Number(saleCents)) * 100).toFixed(2)) : null,
         status: 'user_entered_unverified',
         rule: { id: null, name: 'User-entered percentage (unverified)', fee_type: 'percentage', source: 'user_input', verified_at: null, percentage_rate: input.manual_percentage, fixed_amount: null, currency: input.currency },
       };
@@ -176,14 +197,20 @@ class FeeRepository {
     if (rule.currency && rule.currency !== input.currency && rule.fee_type !== 'percentage') {
       throw new AppError(422, 'CURRENCY_MISMATCH', 'The configured fixed fee uses a different currency.');
     }
-    const percentage = rule.percentage_rate ? input.sale_price * (Number(rule.percentage_rate) / 100) : 0;
-    const fixed = rule.fixed_amount ? Number(rule.fixed_amount) : 0;
-    const feeAmount = Math.round((percentage + fixed) * 100) / 100;
+    const saleCents = cents(input.sale_price);
+    const percentage = rule.percentage_rate ? percentageOf(saleCents, Number(rule.percentage_rate)) : 0n;
+    const fixed = cents(rule.fixed_amount);
+    const feeAmount = money(percentage + fixed);
+    const payment = money(percentageOf(saleCents, input.payment_processing_percentage ?? 0));
+    const purchase = money(cents(input.purchase_cost));
+    const shipping = money(cents(input.shipping_cost));
+    const total = percentage + fixed + cents(payment) + cents(purchase) + cents(shipping);
     return {
       marketplace_id: input.marketplace_id,
       sale_price: input.sale_price,
       currency: input.currency,
       fee_amount: feeAmount,
+      payment_processing_fee: payment, purchase_cost: purchase, shipping_cost: shipping, total_expenses: money(total), net_earnings: money(saleCents - total), profit_margin: input.sale_price ? Number(((Number(saleCents - total) / Number(saleCents)) * 100).toFixed(2)) : null,
       status: 'verified',
       rule: {
         id: rule.id,
@@ -202,28 +229,50 @@ class FeeRepository {
 class AnalyticsRepository {
   constructor(private readonly client: SupabaseDatabaseClient) {}
 
-  async dashboard(userId: string): Promise<AnalyticsDashboard> {
-    const [inventory, sales] = await Promise.all([
-      this.client.from('inventory_items').select('status, estimated_value').eq('user_id', userId),
-      this.client.from('sales').select('net_earnings').eq('user_id', userId),
+  async dashboard(userId: string, options: { date_from?: string; date_to?: string } = {}): Promise<AnalyticsDashboard> {
+    const [inventory, sales, activity] = await Promise.all([
+      this.client.from('inventory_items').select('id, status, estimated_value, estimated_value_currency, category_id, item_name').eq('user_id', userId),
+      (() => { let q = this.client.from('sales').select('*').eq('user_id', userId); if (options.date_from) q = q.gte('sold_at', options.date_from); if (options.date_to) q = q.lte('sold_at', options.date_to); return q; })(),
+      this.client.from('audit_events').select('id,action,entity_type,entity_id,metadata,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(8),
     ]);
     throwIfError(inventory.error);
     throwIfError(sales.error);
-    const inventoryRows = (inventory.data ?? []) as Array<{ status: InventoryItem['status']; estimated_value?: number | string | null }>;
-    const saleRows = (sales.data ?? []) as Array<{ net_earnings: number | string }>;
+    throwIfError(activity.error);
+    const inventoryRows = (inventory.data ?? []) as Array<{ id: string; status: InventoryItem['status']; estimated_value?: number | string | null; estimated_value_currency?: string | null; category_id?: string | null; item_name: string }>;
+    const saleRows = (sales.data ?? []) as Array<{ inventory_item_id: string; sale_price: number | string; sale_currency: string; net_earnings: number | string; net_currency: string; sold_at: string; fee_amount: number | string }>;
     const count = (status: InventoryItem['status']) => inventoryRows.filter((row) => row.status === status).length;
+    const byCurrency = (rows: Array<{ currency: string; value: number }>) => rows.reduce<Record<string, number>>((result, row) => { result[row.currency] = Number(((result[row.currency] ?? 0) + row.value).toFixed(2)); return result; }, {});
+    const inventoryValueByCurrency = byCurrency(inventoryRows.filter((row) => row.estimated_value != null).map((row) => ({ currency: row.estimated_value_currency ?? 'USD', value: Number(row.estimated_value ?? 0) })));
+    const revenueByCurrency = byCurrency(saleRows.map((row) => ({ currency: row.sale_currency, value: Number(row.sale_price) })));
+    const profitByCurrency = byCurrency(saleRows.map((row) => ({ currency: row.net_currency, value: Number(row.net_earnings) })));
+    const months = saleRows.reduce<Record<string, { revenue_by_currency: Record<string, number>; count: number }>>((result, row) => { const month = row.sold_at.slice(0, 7); const entry = result[month] ?? { revenue_by_currency: {}, count: 0 }; entry.count += 1; entry.revenue_by_currency[row.sale_currency] = Number(((entry.revenue_by_currency[row.sale_currency] ?? 0) + Number(row.sale_price)).toFixed(2)); result[month] = entry; return result; }, {});
+    const categoryNames = new Map<string, string>();
+    const categoryIds = [...new Set(inventoryRows.map((row) => row.category_id).filter(Boolean))] as string[];
+    if (categoryIds.length) { const categories = await this.client.from('categories').select('id,name').in('id', categoryIds); for (const category of (categories.data ?? []) as Array<{ id: string; name: string }>) categoryNames.set(category.id, category.name); }
+    const itemCategory = new Map(inventoryRows.map((row) => [row.id, row.category_id ? (categoryNames.get(row.category_id) ?? 'Uncategorized') : 'Uncategorized']));
+    const categoryMap = saleRows.reduce<Record<string, { count: number; revenue_by_currency: Record<string, number> }>>((result, row) => { const category = itemCategory.get(row.inventory_item_id) ?? 'Uncategorized'; const entry = result[category] ?? { count: 0, revenue_by_currency: {} }; entry.count += 1; entry.revenue_by_currency[row.sale_currency] = Number(((entry.revenue_by_currency[row.sale_currency] ?? 0) + Number(row.sale_price)).toFixed(2)); result[category] = entry; return result; }, {});
     return {
       inventory: {
         owned: count('owned'),
         listed: count('listed'),
         sold: count('sold'),
         archived: count('archived'),
-        estimated_value: inventoryRows.reduce((sum, row) => sum + Number(row.estimated_value ?? 0), 0),
+        estimated_value: Number(Object.values(inventoryValueByCurrency).reduce((sum, value) => sum + value, 0).toFixed(2)),
       },
       sales: {
         count: saleRows.length,
-        net_earnings: saleRows.reduce((sum, row) => sum + Number(row.net_earnings), 0),
+        net_earnings: Number(Object.values(profitByCurrency).reduce((sum, value) => sum + value, 0).toFixed(2)),
+        revenue_by_currency: revenueByCurrency,
+        profit_by_currency: profitByCurrency,
       },
+      inventory_value_by_currency: inventoryValueByCurrency,
+      monthly_sales: Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([month, value]) => ({ month, ...value })),
+      status_distribution: (['owned', 'listed', 'sold', 'archived'] as const).map((status) => ({ status, count: count(status) })),
+      category_performance: Object.entries(categoryMap).map(([category, value]) => ({ category, ...value })),
+      recent_sales: saleRows.slice().sort((a, b) => b.sold_at.localeCompare(a.sold_at)).slice(0, 10),
+      activity: (activity.data ?? []) as Array<Record<string, unknown>>,
+      date_from: options.date_from ?? null,
+      date_to: options.date_to ?? null,
     };
   }
 }
@@ -231,8 +280,11 @@ class AnalyticsRepository {
 class ScanRepository {
   constructor(private readonly client: SupabaseDatabaseClient) {}
 
-  async list(userId: string, options: PaginationOptions): Promise<Page<Record<string, unknown>>> {
-    const { data, error, count } = await this.client.from('scans').select('*', { count: 'exact' }).eq('user_id', userId)
+  async list(userId: string, options: ScanListOptions): Promise<Page<Record<string, unknown>>> {
+    let query = this.client.from('scans').select('*', { count: 'exact' }).eq('user_id', userId);
+    if (options.status) query = query.eq('status', options.status);
+    if (options.search) query = query.ilike('id', `%${escapeSearch(options.search)}%`);
+    const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range(pageOffset(options.page, options.limit), pageOffset(options.page, options.limit) + options.limit - 1);
     throwIfError(error);
@@ -444,6 +496,36 @@ class AuditRepository {
     const { error } = await this.client.from('audit_events').insert({ user_id: userId, action, entity_type: entityType, entity_id: entityId, metadata });
     throwIfError(error);
   }
+
+  async recent(userId: string, limit: number): Promise<Array<Record<string, unknown>>> {
+    const { data, error } = await this.client.from('audit_events').select('id,action,entity_type,entity_id,metadata,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(limit);
+    throwIfError(error);
+    return (data ?? []) as Array<Record<string, unknown>>;
+  }
+}
+
+class PriceGuideRepository {
+  constructor(private readonly client: SupabaseDatabaseClient) {}
+
+  async list(userId: string, options: { page: number; limit: number; category_id?: string }): Promise<Page<Record<string, unknown>>> {
+    let categoryQuery = this.client.from('categories').select('id,name,slug', { count: 'exact' }).order('name');
+    if (options.category_id) categoryQuery = categoryQuery.eq('id', options.category_id);
+    const categories = await categoryQuery.range(pageOffset(options.page, options.limit), pageOffset(options.page, options.limit) + options.limit - 1);
+    throwIfError(categories.error);
+    const rows = await Promise.all(((categories.data ?? []) as Array<{ id: string; name: string; slug: string }>).map(async (category) => {
+      const identified = await this.client.from('identified_items').select('id,name,category_id,category_text').eq('user_id', userId).or(`category_id.eq.${category.id},category_text.ilike.%${escapeSearch(category.name)}%`);
+      throwIfError(identified.error);
+      const itemIds = ((identified.data ?? []) as Array<{ id: string }>).map((item) => item.id);
+      const estimates = itemIds.length ? await this.client.from('price_estimates').select('id,low,typical,high,suggested_price,currency,data_source,created_at,updated_at,identified_item_id').eq('user_id', userId).in('identified_item_id', itemIds).order('created_at', { ascending: false }) : { data: [], error: null };
+      throwIfError(estimates.error);
+      const sales = itemIds.length ? await this.client.from('sales').select('id,inventory_item_id,sale_price,sale_currency,net_earnings,net_currency,sold_at').eq('user_id', userId).in('inventory_item_id', itemIds).order('sold_at', { ascending: false }) : { data: [], error: null };
+      throwIfError(sales.error);
+      const observations = itemIds.length ? await this.client.from('market_price_observations').select('*').eq('user_id', userId).in('identified_item_id', itemIds).order('observed_at', { ascending: false }).limit(50) : { data: [], error: null };
+      throwIfError(observations.error);
+      return { ...category, estimates: estimates.data ?? [], sales: sales.data ?? [], observations: observations.data ?? [], market_data_status: observations.data?.length ? 'connected' : 'not_connected' };
+    }));
+    return page(rows, categories.count, options);
+  }
 }
 
 export function createRepositories(client: SupabaseDatabaseClient): Repositories {
@@ -460,5 +542,6 @@ export function createRepositories(client: SupabaseDatabaseClient): Repositories
     audit: new AuditRepository(client),
     pricing: new PricingRepository(client),
     estimates: new EstimateRepository(client),
+    priceGuides: new PriceGuideRepository(client),
   };
 }

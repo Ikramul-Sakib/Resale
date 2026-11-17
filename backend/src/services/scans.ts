@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Repositories, ScanRecord } from '../repositories/contracts.js';
+import type { Repositories, ScanListOptions, ScanRecord } from '../repositories/contracts.js';
 import { AppError } from '../utils/errors.js';
 import { GeminiServiceError, type GeminiService, type IdentificationResult, type ImageInput } from './gemini/index.js';
 import { validateUploadedImages, type UploadedImage } from './image-validation.js';
@@ -63,7 +63,7 @@ export class ScanService {
     };
   }
 
-  async list(userId: string, options: { page: number; limit: number }) {
+  async list(userId: string, options: ScanListOptions) {
     const page = await this.repositories.scans.list(userId, options);
     return { ...page, data: await Promise.all(page.data.map((row) => this.decorate(userId, row as ScanRecord))) };
   }

@@ -143,3 +143,22 @@ malformed output, unsupported claims are prohibited by the prompt, and the retur
 exactly match the estimate or user-entered price. The mock adapter is explicit in the API and UI.
 Saved drafts create owner-scoped audit events. Delete is a soft archive, and there is no publish
 endpoint or marketplace publishing integration.
+
+## Phase 9 inventory, reporting, and honest market data
+
+Phase 9 keeps the controller → service → repository boundary. Inventory filters and scans are
+owner-scoped, thumbnails use signed private Storage URLs, and scan deletion cleans up stored files
+before deleting the row. Purchase cost, AI estimate, listing price, and actual sale price remain
+distinct fields.
+
+The existing `record_sale` PostgreSQL function is reused for mark-sold, keeping the status update
+and sale insert atomic. Fee calculation uses fixed-cent arithmetic and returns rule provenance;
+placeholder/unverified rules are never silently treated as current rates.
+
+Dashboard and Analytics query inventory, sales, and audit events. Aggregates remain grouped by
+currency, while Chart.js renders monthly sales and status distribution from real data. Price Guides
+show only owner estimates and observations, with an explicit empty state when no verified market data
+is connected. The resale-index endpoint remains `501` until an authorized provider exists.
+
+Settings includes profile, preferred currency, password change, and sign out. Account deletion is
+intentionally omitted because safe server-side cleanup is not implemented.

@@ -59,7 +59,11 @@ export function createControllers(services: Services) {
       res.status(201).json(await services.pricing.estimate(userId(req), params.id, validated(req, 'body')));
     },
     async analyticsDashboard(req: RequestWithContext, res: Response): Promise<void> {
-      res.json(await services.analytics.dashboard(userId(req)));
+      res.json(await services.analytics.dashboard(userId(req), validated(req, 'query')));
+    },
+    async listPriceGuides(req: RequestWithContext, res: Response): Promise<void> {
+      if (!services.priceGuides) throw new AppError(501, 'NOT_IMPLEMENTED', 'Price guides are not configured.');
+      res.json(await services.priceGuides.list(userId(req), validated(req, 'query')));
     },
 
     async listScans(req: RequestWithContext, res: Response): Promise<void> {
@@ -75,6 +79,11 @@ export function createControllers(services: Services) {
     },
     async retryScan(req: RequestWithContext, res: Response): Promise<void> {
       res.json(await services.scans.retry(userId(req), validated<{ id: string }>(req, 'params').id));
+    },
+    async deleteScan(req: RequestWithContext, res: Response): Promise<void> {
+      if (!services.scans.delete) throw new AppError(501, 'NOT_IMPLEMENTED', 'Scan deletion is not configured.');
+      await services.scans.delete(userId(req), validated<{ id: string }>(req, 'params').id);
+      res.status(204).send();
     },
     async getItem(req: RequestWithContext, res: Response): Promise<void> {
       res.json(await services.items.get(userId(req), validated<{ id: string }>(req, 'params').id));

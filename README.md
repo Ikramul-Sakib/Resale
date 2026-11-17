@@ -55,6 +55,9 @@ npm run test:e2e --workspace frontend
 npm run typecheck:backend
 npm run lint:backend
 npm run test:backend
+npm run lint --workspace frontend
+npm run lint --workspace backend
+supabase test db
 ```
 
 E2E authentication tests require local values from `supabase status -o env`, including the
@@ -92,6 +95,14 @@ npm run gemini:listing-smoke --workspace backend -- ./confirmed-item.json
 
 The real listing smoke command is manual and is not part of the automated test suite.
 ```
+
+## Phase 9 workspace features
+
+Authenticated users can manage inventory, record sales atomically, review saved scans, calculate
+fees with verified-rule provenance or an explicitly unverified manual percentage, view real dashboard
+and analytics aggregates, and browse honest price-guide empty states. Analytics keeps currencies
+separate. The resale-index endpoint remains unavailable until a verified market-data provider is
+configured. Account deletion is not offered because safe server-side cleanup is not implemented.
 ### Price estimation
 
 Phase 7 adds the authenticated pricing flow. Set `GEMINI_MOCK=true` for local automated tests and
