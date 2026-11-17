@@ -34,7 +34,7 @@ const state: AppState = {
   authLoading: false, authSuccess: '', settingsSaving: false, passwordSaving: false, dashboardLoading: false,
   selectedImages: DEMO_MODE ? demoImages : [], analysisStage: DEMO_MODE ? 1 : 0, uploadError: '', toast: '', currency: 'USD',
   scanStatus: 'idle', uploadProgress: 0, scanError: '', cameraError: '', itemSaving: false,
-  identification: { name: 'Mechanical keyboard, 75% layout', brand: 'Keychron', model: 'K2', category: 'Computer accessories', condition: 'Good, light wear', attributes: 'Wireless, hot-swappable, RGB' },
+  identification: { name: 'Mechanical keyboard, 75% layout', brand: 'Keychron', model: 'K2', category: 'Computer accessories', productType: 'Keyboard', condition: 'Good, light wear', attributes: 'Wireless, hot-swappable, RGB' },
   estimateLoading: false, estimateError: '', marketplaces: [], estimateMarketplaceId: '', suggestedPriceInput: '', manualFeePercentage: '', inventorySaving: false,
   listingLoading: false, listingError: '', listingDrafts: [], listingInventory: [], listingItemId: '', listingInventoryItemId: '', listingMarketplaceId: '', listingTone: 'neutral', listingNotes: '', listingPrice: '', listingDirty: false, listingSaving: false, listingCopyMessage: '', listingTitleMaxLength: 120, listingSaved: false,
   inventoryItems: [], inventoryLoading: false, inventoryError: '', inventorySearch: '', inventoryStatus: '', inventoryCondition: '', inventorySort: 'updated_at', inventorySelected: null, savedScans: [], savedScansLoading: false, savedScansError: '', savedScansStatus: '', feeResult: undefined, feeLoading: false, feeError: '', analyticsData: undefined, analyticsLoading: false, analyticsError: '', priceGuides: [], priceGuidesLoading: false, priceGuidesError: '',
@@ -93,6 +93,8 @@ function render(): void {
   state.authPage = null; state.screen = pathToScreen(guarded.path as AppPath);
   root.innerHTML = renderLayout({ activeScreen: state.screen, content: renderProtectedContent(), toast: state.toast, demoMode: DEMO_MODE && !isAuthenticated(), displayName: DEMO_MODE && !isAuthenticated() ? 'Alex Rivera' : currentDisplayName(), email: state.user?.email ?? 'Demo workspace' });
   createIcons({ icons }); bindEvents();
+  const dialog = root.querySelector<HTMLElement>('[role="dialog"]');
+  dialog?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
 }
 
 function showToast(message: string): void {
@@ -334,6 +336,8 @@ async function openCamera(): Promise<void> {
     const modal = document.createElement('div'); modal.className = 'camera-modal'; modal.innerHTML = '<div class="camera-dialog" role="dialog" aria-modal="true" aria-labelledby="camera-title"><h2 id="camera-title">Take a product photo</h2><video autoplay playsinline></video><div class="page-actions"><button class="button button-primary" type="button" data-camera-capture>Take photo</button><button class="button button-secondary" type="button" data-camera-cancel>Cancel</button></div></div>';
     document.body.appendChild(modal); const video = modal.querySelector('video'); if (video) video.srcObject = stream;
     const close = () => { stream.getTracks().forEach((track) => track.stop()); modal.remove(); };
+    modal.querySelector<HTMLElement>('[data-camera-capture]')?.focus();
+    modal.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
     modal.querySelector('[data-camera-cancel]')?.addEventListener('click', close);
     modal.querySelector('[data-camera-capture]')?.addEventListener('click', () => { if (!video) return; const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720; canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height); canvas.toBlob((blob) => { if (blob) addSelectedFiles([new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' })]); close(); }, 'image/jpeg', 0.9); });
   } catch {
@@ -400,7 +404,26 @@ function bindEvents(): void {
   document.querySelector<HTMLTextAreaElement>('[data-listing-notes]')?.addEventListener('input', (event) => { state.listingNotes = (event.currentTarget as HTMLTextAreaElement).value; const count = document.querySelector('[data-notes-count]'); if (count) count.textContent = String(state.listingNotes.length); state.listingDirty = true; });
   document.querySelector<HTMLInputElement>('[data-listing-price]')?.addEventListener('input', (event) => { state.listingPrice = (event.currentTarget as HTMLInputElement).value; state.listingDirty = true; });
   document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-listing-title], [data-listing-description], [data-listing-condition], [data-listing-points], [data-listing-keywords]').forEach((input) => input.addEventListener('input', () => { updateListingGeneratedFromFields(); const title = document.querySelector<HTMLInputElement>('[data-listing-title]'); const titleCount = document.querySelector('[data-title-count]'); const titleWarning = document.querySelector<HTMLElement>('[data-title-warning]'); if (titleCount && title) titleCount.textContent = String(title.value.length); if (titleWarning && title) titleWarning.hidden = title.value.length <= state.listingTitleMaxLength; const description = document.querySelector<HTMLTextAreaElement>('[data-listing-description]'); const descriptionCount = document.querySelector('[data-description-count]'); if (descriptionCount && description) descriptionCount.textContent = String(description.value.length); }));
-  document.querySelectorAll<HTMLInputElement>('[data-field]').forEach((input) => input.addEventListener('input', () => { state.identification[input.dataset.field as keyof AppState['identification']] = input.value; })); document.querySelector<HTMLFormElement>('[data-search-form]')?.addEventListener('submit', (event) => { event.preventDefault(); showToast(DEMO_MODE && !isAuthenticated() ? 'Demo search is not connected to live data.' : 'Search is not connected yet.'); });
+  document.querySelectorAll<HTMLInputElement>('[data-field]').forEach((input) => input.addEventListener('input', () => {
+    const field = input.dataset.field as keyof AppState['identification'];
+    state.identification[field] = input.value;
+    // Keep the unsaved identification draft in memory so an unrelated async
+    // refresh cannot replace the user's edits before they press Save changes.
+    const scanResult = state.scanResult;
+    const item = scanResult?.identified_item;
+    if (item) {
+      const next = { ...item };
+      if (field === 'name') next.name = input.value;
+      else if (field === 'brand') next.brand_text = input.value || null;
+      else if (field === 'model') next.model = input.value || null;
+      else if (field === 'category') next.category_text = input.value || null;
+      else if (field === 'productType') next.product_type = input.value || null;
+      else if (field === 'condition') next.condition = input.value || null;
+      else if (field === 'attributes') next.key_attributes = input.value ? { text: input.value } : {};
+      state.scanResult = { ...scanResult, identified_item: next };
+    }
+  }));
+  document.querySelector<HTMLFormElement>('[data-search-form]')?.addEventListener('submit', (event) => { event.preventDefault(); const form = event.currentTarget as HTMLFormElement; const term = String(new FormData(form).get('search') ?? '').trim(); if (!term) return; if (DEMO_MODE && !isAuthenticated()) { showToast('Demo search is not connected to live data.'); return; } state.inventorySearch = term; state.inventoryStatus = ''; state.inventoryCondition = ''; state.inventorySort = 'updated_at'; navigate('/inventory'); });
 }
 
 async function saveSettings(form: HTMLFormElement): Promise<void> { const parsed = profileSchema.safeParse(Object.fromEntries(new FormData(form).entries())); clearFormState(); if (!parsed.success) { setFormErrors(parsed.error.issues); state.authError = 'Check the profile fields.'; render(); return; } state.settingsSaving = true; render(); try { state.profile = await getService().updateProfile({ display_name: parsed.data.displayName, default_currency: parsed.data.currency }); state.authSuccess = 'Profile saved.'; } catch { state.authError = 'Unable to save your profile right now.'; } finally { state.settingsSaving = false; render(); } }
@@ -435,10 +458,17 @@ async function saveIdentification(): Promise<void> {
 }
 
 async function saveInventory(): Promise<void> {
-  const item = state.scanResult?.identified_item; const estimate = state.estimate?.estimate;
-  if (!item || !estimate) return;
+  const scanResult = state.scanResult; const item = scanResult?.identified_item; const estimate = state.estimate?.estimate;
+  if (!scanResult || !item || !estimate) return;
   state.inventorySaving = true; render();
-  try { await getApiClient().post('/inventory', { identified_item_id: item.id, price_estimate_id: estimate.id, item_name: item.name, condition: item.condition ?? null, status: 'owned', estimated_value: estimate.typical, estimated_value_currency: estimate.currency, attributes: item.key_attributes ?? {} }); showToast('Saved to inventory.'); }
+  try {
+    // Re-read the confirmed item before creating the inventory row so a late
+    // identification save or another tab cannot make the inventory snapshot stale.
+    const confirmedItem = await getApiClient().get<import('./services/api').IdentifiedItem>(`/items/${item.id}`);
+    state.scanResult = { ...scanResult, identified_item: confirmedItem };
+    await getApiClient().post('/inventory', { identified_item_id: confirmedItem.id, price_estimate_id: estimate.id, item_name: confirmedItem.name, condition: confirmedItem.condition ?? null, status: 'owned', estimated_value: estimate.typical, estimated_value_currency: estimate.currency, attributes: confirmedItem.key_attributes ?? {} });
+    showToast('Saved to inventory.');
+  }
   catch (error) { showToast(error instanceof ApiError ? error.message : 'Could not save this item.'); }
   finally { state.inventorySaving = false; render(); }
 }

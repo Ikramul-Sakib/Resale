@@ -28,6 +28,7 @@ export interface IdentificationFields {
   brand: string;
   model: string;
   category: string;
+  productType?: string;
   condition: string;
   attributes: string;
 }

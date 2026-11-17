@@ -245,7 +245,7 @@ th { color: var(--color-text-muted); font-size: 10px; font-weight: 700; text-tra
   min-height: 100vh;
   place-items: center;
   padding: 24px;
-  background: var(--color-page);
+  background: var(--color-bg);
 }
 
 .auth-card {
@@ -852,6 +852,7 @@ th { color: var(--color-text-muted); font-size: 10px; font-weight: 700; text-tra
 }
 
 .form-field input,
+.form-field textarea,
 .currency-control select {
   width: 100%;
   min-height: 34px;
@@ -861,6 +862,11 @@ th { color: var(--color-text-muted); font-size: 10px; font-weight: 700; text-tra
   color: #111827;
   background: #fff;
   font-size: 11px;
+}
+
+.form-field textarea {
+  min-height: 76px;
+  resize: vertical;
 }
 
 .confidence-note {

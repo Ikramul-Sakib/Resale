@@ -7,10 +7,11 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const password = 'LocalTestPassword123!';
 let admin: SupabaseClient;
 let testEmail = '';
+let journeyEmail = '';
 
-async function login(page: Page): Promise<void> {
+async function login(page: Page, email = testEmail): Promise<void> {
   await page.goto('/login');
-  await page.getByLabel('Email').fill(testEmail);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -29,6 +30,8 @@ test.afterAll(async () => {
     const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
     const user = data.users.find((candidate) => candidate.email === testEmail);
     if (user) await admin.auth.admin.deleteUser(user.id);
+    const journeyUser = data.users.find((candidate) => candidate.email === journeyEmail);
+    if (journeyUser) await admin.auth.admin.deleteUser(journeyUser.id);
   }
 });
 
@@ -146,6 +149,8 @@ async function reachListingGenerator(page: Page): Promise<void> {
   await expect(page.getByText('Identification changes saved.')).toBeVisible();
   await page.getByRole('button', { name: 'Continue to Price Estimation' }).click();
   await expect(page.getByText('AI preliminary estimate')).toBeVisible();
+  await page.getByRole('button', { name: 'Save to Inventory' }).click();
+  await expect(page.getByText('Saved to inventory.')).toBeVisible();
   await page.getByRole('button', { name: 'Generate Listing' }).click();
   await expect(page).toHaveURL(/\/listing-generator$/);
   await expect(page.getByText('Drafts are for you to copy into a marketplace.')).toBeVisible();
@@ -207,4 +212,51 @@ test('renders fee calculator, analytics, and honest price-guide states', async (
   await expect(page.getByRole('heading', { name: 'Monthly sales' })).toBeVisible();
   await page.goto('/price-guides');
   await expect(page.getByText('No verified market data connected yet.').first()).toBeVisible();
+});
+
+test('completes the register-to-analytics journey', async ({ page }) => {
+  journeyEmail = `journey-${Date.now()}@example.test`;
+  await page.goto('/register');
+  await page.getByLabel('Display name').fill('Journey User');
+  await page.getByLabel('Email').fill(journeyEmail);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByLabel('Confirm password').fill(password);
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page.locator('.form-alert-success')).toContainText('Check your email');
+
+  const { data: users } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  const journeyUser = users.users.find((candidate) => candidate.email === journeyEmail);
+  if (!journeyUser) throw new Error('The journey test user was not created.');
+  const { error: confirmationError } = await admin.auth.admin.updateUserById(journeyUser.id, { email_confirm: true });
+  if (confirmationError) throw confirmationError;
+
+  await login(page, journeyEmail);
+  await page.goto('/scan');
+  const fixture = path.resolve(process.cwd(), '../docs/design/01-dashboard.png');
+  await page.locator('[data-file-input]').setInputFiles(fixture);
+  await page.getByRole('button', { name: 'Identify & Estimate Price' }).click();
+  await expect(page).toHaveURL(/\/identification$/);
+  await page.getByLabel('Product name').fill('Full journey product');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Identification changes saved.')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue to Price Estimation' }).click();
+  await expect(page.getByText('AI preliminary estimate')).toBeVisible();
+  await page.getByRole('button', { name: 'Save to Inventory' }).click();
+  await expect(page.getByText('Saved to inventory.')).toBeVisible();
+  await page.getByRole('button', { name: 'Generate Listing' }).click();
+  await page.getByRole('button', { name: 'Generate listing' }).click();
+  await expect(page.getByRole('heading', { name: 'Review draft' })).toBeVisible();
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect(page.getByText('Listing draft saved.')).toBeVisible();
+
+  await page.goto('/inventory');
+  await expect(page.getByText('Full journey product')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit' }).last().click();
+  await page.getByRole('button', { name: 'Mark as sold' }).click();
+  await page.locator('[data-sale-form] input[name="sale_price"]').fill('40');
+  await page.getByRole('button', { name: 'Save sale' }).click();
+  await expect(page.getByText('Sale recorded and item marked sold.')).toBeVisible();
+  await page.goto('/analytics');
+  await expect(page.getByRole('heading', { name: 'Recent sales' })).toBeVisible();
+  await expect(page.getByText('Items sold')).toBeVisible();
 });

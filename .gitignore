@@ -6,3 +6,6 @@ dist/
 supabase/.temp/
 supabase/.branches/
 frontend/test-results/
+test-results/
+playwright-report/
+coverage/

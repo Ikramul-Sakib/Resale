@@ -48,6 +48,12 @@ approved mock-data screens. Authenticated users should use `VITE_DEMO_MODE=false
 Useful checks:
 
 ```bash
+npm run typecheck
+npm run lint
+npm run build:all
+npm test
+npm run e2e
+npm run test:db
 npm run typecheck --workspace frontend
 npm run build --workspace frontend
 npm run test --workspace frontend
@@ -59,6 +65,10 @@ npm run lint --workspace frontend
 npm run lint --workspace backend
 supabase test db
 ```
+
+Deployment preparation and production setup are documented in `docs/deployment.md`. Run the root
+scripts above from a fresh clone after `npm ci`; browser E2E tests additionally require local
+Supabase, Docker, and the local environment values from `supabase status -o env`.
 
 E2E authentication tests require local values from `supabase status -o env`, including the
 server-only service-role key in the test process. They never expose that key to the browser.
@@ -79,6 +89,7 @@ For an end-to-end upload with the explicit mock adapter:
 
 ```bash
 GEMINI_MOCK=true npm run test:e2e --workspace frontend
+```
 
 ## Listing generation
 
@@ -94,7 +105,6 @@ npm run gemini:listing-smoke --workspace backend -- ./confirmed-item.json
 ```
 
 The real listing smoke command is manual and is not part of the automated test suite.
-```
 
 ## Phase 9 workspace features
 
