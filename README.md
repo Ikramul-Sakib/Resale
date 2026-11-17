@@ -21,7 +21,9 @@ supabase db reset
 
 Copy `.env.example` to `.env` and fill the local values. The browser may receive only
 `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; keep `SUPABASE_SERVICE_ROLE_KEY` and any
-future Gemini key server-only. Local confirmation and password-reset emails are available in
+Gemini key server-only. Set `GEMINI_MODEL` explicitly whenever `GEMINI_API_KEY` is set; the
+backend has no guessed model default. Set `GEMINI_MOCK=true` for local/E2E identification
+without making a Gemini call. Local confirmation and password-reset emails are available in
 Mailpit at http://127.0.0.1:54324.
 
 Start the API and frontend in separate terminals:
@@ -57,3 +59,35 @@ npm run test:backend
 
 E2E authentication tests require local values from `supabase status -o env`, including the
 server-only service-role key in the test process. They never expose that key to the browser.
+
+## Real Gemini smoke test
+
+With `GEMINI_API_KEY` and `GEMINI_MODEL` set in the backend environment, and
+`GEMINI_MOCK=false`, run:
+
+```bash
+npm run gemini:smoke --workspace backend -- ../docs/design/01-dashboard.png
+```
+
+This sends one image to Gemini through the backend adapter and prints only the structured
+identification result. It does not estimate price or generate listing text.
+
+For an end-to-end upload with the explicit mock adapter:
+
+```bash
+GEMINI_MOCK=true npm run test:e2e --workspace frontend
+```
+### Price estimation
+
+Phase 7 adds the authenticated pricing flow. Set `GEMINI_MOCK=true` for local automated tests and
+development without a Gemini call. For a real estimate, set `GEMINI_API_KEY` and a current image-capable
+`GEMINI_MODEL` in the backend environment; the key never belongs in the frontend. The manual real-call
+smoke command is:
+
+```bash
+npm run gemini:price-smoke --workspace backend -- ./confirmed-item.json
+```
+
+The item must be user-confirmed before estimating. Prices are AI preliminary estimates only; live
+marketplace data is not connected. Fee rules show their source and verification timestamp, or are
+explicitly marked unverified when the user enters a percentage.

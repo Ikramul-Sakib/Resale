@@ -5,6 +5,7 @@ import { createAuthMiddleware } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import {
   feeCalculationSchema,
+  estimateCreateSchema,
   idParamsSchema,
   inventoryCreateSchema,
   inventoryListSchema,
@@ -14,11 +15,13 @@ import {
   listingListSchema,
   listingPatchSchema,
   paginationSchema,
+  pricingHistorySchema,
   salesCreateSchema,
   salesListSchema,
-  stubRetrySchema,
+  scanSourceSchema,
 } from '../validators/schemas.js';
 import { createControllers } from '../controllers/index.js';
+import { scanUpload } from '../middleware/scan-upload.js';
 
 export function createApiRouter(services: Services, verifier: TokenVerifier): Router {
   const router = Router();
@@ -42,12 +45,12 @@ export function createApiRouter(services: Services, verifier: TokenVerifier): Ro
 
   router.get('/scans', validate('query', paginationSchema), controller.listScans);
   router.get('/scans/:id', validate('params', idParamsSchema), controller.getScan);
-  router.post('/scans', validate('body', stubRetrySchema), controller.notImplemented);
-  router.post('/scans/:id/retry', validate('params', idParamsSchema), controller.notImplemented);
+  router.post('/scans', scanUpload, validate('body', scanSourceSchema), controller.createScan);
+  router.post('/scans/:id/retry', validate('params', idParamsSchema), controller.retryScan);
 
   router.get('/items/:id', validate('params', idParamsSchema), controller.getItem);
   router.patch('/items/:id', validate('params', idParamsSchema), validate('body', itemPatchSchema), controller.updateItem);
-  router.post('/items/:id/estimate', validate('params', idParamsSchema), controller.notImplemented);
+  router.post('/items/:id/estimate', validate('params', idParamsSchema), validate('body', estimateCreateSchema), controller.estimateItem);
 
   router.get('/listings', validate('query', listingListSchema), controller.listListings);
   router.post('/listings', validate('body', listingCreateSchema), controller.createListing);
@@ -55,7 +58,7 @@ export function createApiRouter(services: Services, verifier: TokenVerifier): Ro
   router.delete('/listings/:id', validate('params', idParamsSchema), controller.deleteListing);
   router.post('/listings/generate', controller.notImplemented);
 
-  router.get('/pricing/history', validate('query', paginationSchema), controller.pricingHistory);
+  router.get('/pricing/history', validate('query', pricingHistorySchema), controller.pricingHistory);
   router.get('/estimates/:id', validate('params', idParamsSchema), controller.getEstimate);
   router.get('/analytics/resale-index', controller.notImplemented);
 

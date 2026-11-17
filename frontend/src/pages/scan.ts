@@ -16,15 +16,12 @@ function renderPreview(image: AppState['selectedImages'][number], index: number)
   `;
 }
 
-function statusLabel(stage: AppState['analysisStage'], step: number): string {
-  if (stage > step) return 'Done';
-  if (stage === step) return 'In progress';
-  return 'Waiting';
-}
-
 export function renderScanPage(state: AppState, demoMode = false): string {
-  const progress = state.analysisStage === 0 ? 0 : Math.min(100, state.analysisStage * 33.333);
-  const identifyDisabled = state.selectedImages.length === 0 || state.analysisStage > 0;
+  const progress = state.scanStatus === 'uploading' ? state.uploadProgress : state.scanStatus === 'identifying' ? 100 : state.scanStatus === 'completed' ? 100 : 0;
+  const identifyDisabled = state.selectedImages.length === 0 || state.scanStatus === 'uploading' || state.scanStatus === 'identifying';
+  const stepOne = state.scanStatus === 'uploading' ? 'In progress' : state.scanStatus === 'idle' ? 'Waiting' : 'Done';
+  const stepTwo = state.scanStatus === 'identifying' ? 'In progress' : state.scanStatus === 'completed' ? 'Done' : 'Waiting';
+  const stepThree = state.scanStatus === 'completed' ? 'Done' : 'Waiting';
 
   return `
     ${renderPageHeader('Scan Product', 'Upload photos and ResaleIQ will identify the item and estimate a resale range.')}
@@ -41,6 +38,8 @@ export function renderScanPage(state: AppState, demoMode = false): string {
       <input class="visually-hidden" data-camera-input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" />
     </section>
     <p class="field-error" data-upload-error${state.uploadError ? '' : ' hidden'}>${escapeHtml(state.uploadError)}</p>
+    <p class="field-error"${state.cameraError ? '' : ' hidden'}>${escapeHtml(state.cameraError)}</p>
+    <div class="form-alert form-alert-error" role="alert"${state.scanError ? '' : ' hidden'}>${escapeHtml(state.scanError)}</div>
 
     <article class="card selected-images-card">
       <div class="card-heading"><h2>Selected images</h2><span class="muted-copy">${state.selectedImages.length}/6</span></div>
@@ -54,16 +53,17 @@ export function renderScanPage(state: AppState, demoMode = false): string {
       <p>Photos are sent to our secure server, which asks Google Gemini to identify the item. Nothing is shared from your browser directly.</p>
       <div class="analysis-progress" aria-hidden="true"><span style="width: ${progress}%"></span></div>
       <ol class="analysis-steps">
-        <li><span>1. Upload complete</span><b>${statusLabel(state.analysisStage, 1)}</b></li>
-        <li><span>2. Gemini identifying product</span><b>${statusLabel(state.analysisStage, 2)}</b></li>
-        <li><span>3. Extracting attributes</span><b>${statusLabel(state.analysisStage, 3)}</b></li>
+        <li><span>1. Upload complete</span><b>${stepOne}</b></li>
+        <li><span>2. Gemini identifying product</span><b>${stepTwo}</b></li>
+        <li><span>3. Extracting attributes</span><b>${stepThree}</b></li>
       </ol>
     </article>
 
     <div class="page-actions">
       <button class="button button-primary" type="button" data-action="identify" ${identifyDisabled ? 'disabled' : ''}>
-        ${state.analysisStage > 0 ? (demoMode ? 'Analyzing demo photos…' : 'Submitting…') : 'Identify & Estimate Price'}
+        ${state.scanStatus === 'uploading' ? `Uploading ${state.uploadProgress}%…` : state.scanStatus === 'identifying' ? 'Gemini identifying…' : demoMode ? 'Sign in to identify a real photo' : 'Identify & Estimate Price'}
       </button>
+      ${state.scanStatus === 'failed' && state.scanResult?.id ? '<button class="button button-secondary" type="button" data-action="retry-scan">Retry scan</button>' : ''}
     </div>
   `;
 }

@@ -22,6 +22,27 @@ Authenticated users see API-backed empty states when no records exist. The amber
 badge and sample values are shown only when `VITE_DEMO_MODE=true`; demo mode is not used for
 authenticated sessions.
 
+## Phase 6 image and identification boundary
+
+Image uploads use Multer memory limits at the Express edge, then a server-side magic-byte
+check accepts only JPEG, PNG, or WebP files up to 10 MB each and six files per scan. The
+backend creates the owner-scoped scan, uploads each file to the private `product-images`
+bucket under `<user_id>/<scan_id>/<random-file>`, and records `scan_images`. Signed URLs are
+created only for the authenticated owner's response.
+
+The scan service advances `uploaded → identifying → completed` or `failed`. Gemini calls
+are made only by `backend/src/services/gemini`; image bytes, prompts, and API keys never
+reach the browser or logs. Visible text in images is explicitly treated as untrusted data.
+Gemini structured JSON is validated again with Zod before persistence. A failed AI call keeps
+the uploaded images for `POST /scans/:id/retry`; failures before image persistence perform
+best-effort storage and scan cleanup.
+
+`GEMINI_MODEL` is mandatory when `GEMINI_API_KEY` is configured; there is no guessed model
+default. `GEMINI_MOCK=true` forces the clearly labelled mock adapter for local/E2E tests.
+The optional `backend/scripts/gemini-smoke.ts` command is the only documented real-call
+smoke test. Price estimation and listing generation remain typed placeholders for later
+phases.
+
 ## Phase 4 boundary
 
 The backend is a Node.js/Express/TypeScript REST API. This phase does not implement Gemini, image upload, frontend authentication, or external marketplace publishing.
@@ -59,6 +80,9 @@ backend/
     ├── routes/               # URL and validation wiring
     ├── controllers/          # HTTP translation only
     ├── services/             # business rules and service contracts
+    │   ├── gemini/           # real/mock identification adapters and Zod parsing
+    │   ├── image-validation.ts
+    │   └── scans.ts          # upload, status, retry, signed-URL orchestration
     ├── middleware/           # auth, request IDs, validation, errors
     ├── repositories/         # Supabase data access and owner filters
     ├── validators/            # strict Zod request schemas
@@ -68,7 +92,7 @@ backend/
 
 ## Configuration and secrets
 
-`src/config/env.ts` loads `.env` and validates it with Zod before the server starts. Missing or invalid values produce a clear startup error. `SUPABASE_SERVICE_ROLE_KEY` is only read by `backend/src/config/supabase.ts`; it is never sent to a browser response.
+`src/config/env.ts` loads `.env` and validates it with Zod before the server starts. Missing or invalid values produce a clear startup error. `SUPABASE_SERVICE_ROLE_KEY` and `GEMINI_API_KEY` are backend-only; neither is sent to a browser response. `GEMINI_MODEL` is required whenever a real Gemini key is configured.
 
 `CORS_ORIGIN` is a comma-separated allowlist. The API rejects disallowed origins, applies Helmet, limits JSON body size, attaches an `X-Request-ID`, and rate-limits requests.
 
@@ -88,6 +112,18 @@ Fee calculation reads configurable, verified database rules and returns provenan
 
 ## Tests
 
-`backend/tests/app.test.ts` uses injected service test doubles to exercise the HTTP contract deterministically without mutating the local database. It covers authentication, strict input validation, ownership isolation, CRUD, sales status flow, fee provenance, analytics, stub behavior, and error shape.
+`backend/tests/app.test.ts` uses injected service test doubles to exercise the HTTP contract deterministically without mutating the local database. `backend/tests/phase6.test.ts` covers magic-byte validation, upload limits, structured Gemini parsing, safe error mapping, and explicit mock mode. The Playwright suite covers authenticated upload/removal, mock identification, and failed-scan retry UI against local Supabase Storage.
 
 The Supabase database and RLS tests remain live pgTAP tests under `supabase/tests/` and were rerun after the atomic sales migration. The backend tests do not mock the Supabase client itself; they replace the repository/service boundary for HTTP isolation.
+## Phase 7 pricing
+
+Price estimation is isolated in `backend/src/services/pricing/service.ts`. It accepts only the
+user-confirmed item after `review_status=reviewed`, sanitizes free text, calls the Gemini adapter,
+validates ordered positive prices and requested currency, and persists model/source/prompt metadata.
+The Gemini service supports a real Google Gen AI adapter and an explicit mock adapter. The mock is
+used when `GEMINI_MOCK=true` or credentials are absent and is labelled in every response.
+
+`MarketDataProvider` is an adapter boundary. The current implementation is
+`NotConfiguredMarketDataProvider`, so the UI reports market data as `not connected`; no marketplace
+is scraped and no live data is claimed. Fee calculations use only verified database rules, or an
+explicit user-entered percentage marked unverified.

@@ -26,13 +26,16 @@ const state: AppState = {
   screen: 'dashboard', authPage: null, authStatus: 'loading', authError: '', fieldErrors: {}, user: null, profile: null,
   authLoading: false, authSuccess: '', settingsSaving: false, passwordSaving: false, dashboardLoading: false,
   selectedImages: DEMO_MODE ? demoImages : [], analysisStage: DEMO_MODE ? 1 : 0, uploadError: '', toast: '', currency: 'USD',
+  scanStatus: 'idle', uploadProgress: 0, scanError: '', cameraError: '', itemSaving: false,
   identification: { name: 'Mechanical keyboard, 75% layout', brand: 'Keychron', model: 'K2', category: 'Computer accessories', condition: 'Good, light wear', attributes: 'Wireless, hot-swappable, RGB' },
+  estimateLoading: false, estimateError: '', marketplaces: [], estimateMarketplaceId: '', suggestedPriceInput: '', manualFeePercentage: '', inventorySaving: false,
 };
 
 let authService: AuthService | undefined;
 let unsubscribeAuth: (() => void) | undefined;
 let toastTimer: number | undefined;
 let dashboardRequestInFlight = false;
+let estimateRequestInFlight = false;
 
 function getService(): AuthService { if (!authService) authService = getAuthService(); return authService; }
 function isAuthenticated(): boolean { return state.authStatus === 'authenticated' && Boolean(state.user); }
@@ -43,8 +46,8 @@ function renderProtectedContent(): string {
   const demoSession = DEMO_MODE && !isAuthenticated();
   if (state.screen === 'dashboard') return renderDashboardPage({ demoMode: demoSession, displayName: currentDisplayName(), data: state.dashboardData, loading: state.dashboardLoading });
   if (state.screen === 'scan') return renderScanPage(state, demoSession);
-  if (state.screen === 'identification') return demoSession ? renderIdentificationPage(state.identification) : '<article class="card phase-card"><h2>Identification is not available yet</h2><p>The Gemini identification pipeline will be connected in a later phase.</p></article>';
-  if (state.screen === 'estimate') return demoSession ? renderEstimatePage(state) : '<article class="card phase-card"><h2>No estimate yet</h2><p>AI price estimation is not available until the identification pipeline is connected.</p></article>';
+  if (state.screen === 'identification') return demoSession ? renderIdentificationPage(state.identification) : state.scanResult?.identified_item ? renderIdentificationPage(state.scanResult.identified_item, state.scanResult.images?.[0]?.signed_url, state.scanResult.ai_mode, state.scanResult.identification_empty, state.itemSaving) : '<article class="card phase-card"><h2>No identification yet</h2><p>Upload a product photo to begin.</p></article>';
+  if (state.screen === 'estimate') return renderEstimatePage(state, { demoMode: demoSession, loading: state.estimateLoading, error: state.estimateError, estimate: state.estimate?.estimate, item: state.scanResult?.identified_item, imageUrl: state.scanResult?.images?.[0]?.signed_url, aiMode: state.estimate?.ai_mode, fee: state.estimate?.fee, marketplaces: state.marketplaces, marketplaceId: state.estimateMarketplaceId, suggestedPrice: state.suggestedPriceInput, manualFeePercentage: state.manualFeePercentage, savingInventory: state.inventorySaving });
   if (state.screen === 'settings' && isAuthenticated()) return renderSettingsPage({ email: state.user?.email ?? '', profile: state.profile, saving: state.settingsSaving, passwordSaving: state.passwordSaving, message: state.authSuccess, error: state.authError });
   return renderPlaceholderPage(state.screen as Exclude<ScreenId, 'dashboard' | 'scan' | 'identification' | 'estimate'>, demoSession);
 }
@@ -77,6 +80,35 @@ function render(): void {
 function showToast(message: string): void {
   state.toast = message; window.clearTimeout(toastTimer); render();
   toastTimer = window.setTimeout(() => { state.toast = ''; render(); }, 3200);
+}
+
+async function loadMarketplaces(): Promise<void> {
+  try { state.marketplaces = (await getApiClient().get<{ data: import('./services/api').Marketplace[] }>('/marketplaces')).data; } catch { state.marketplaces = []; }
+}
+
+async function loadEstimate(force = false): Promise<void> {
+  const itemId = state.estimateItemId ?? state.scanResult?.identified_item?.id;
+  if (!isAuthenticated() || !itemId || estimateRequestInFlight) return;
+  estimateRequestInFlight = true; state.estimateLoading = true; state.estimateError = ''; render();
+  try {
+    const result = await getApiClient().post<import('./services/api').EstimateResponse>(`/items/${itemId}/estimate`, { currency: state.currency, marketplace_id: state.estimateMarketplaceId || null, force });
+    state.estimateItemId = itemId; state.estimate = result; state.suggestedPriceInput = String(result.estimate.suggested_price ?? result.estimate.suggested_selling_price ?? result.estimate.typical); state.estimateError = '';
+  } catch (error) { state.estimate = undefined; state.estimateError = error instanceof ApiError ? error.message : 'The estimate could not be loaded.'; }
+  finally { estimateRequestInFlight = false; state.estimateLoading = false; render(); }
+}
+
+async function calculateFee(): Promise<void> {
+  const marketplaceId = state.estimateMarketplaceId; const salePrice = Number(state.suggestedPriceInput);
+  if (!marketplaceId || !Number.isFinite(salePrice) || salePrice <= 0 || !state.estimate) return;
+  try {
+    const body: Record<string, unknown> = { marketplace_id: marketplaceId, sale_price: salePrice, currency: state.currency };
+    if (state.manualFeePercentage) body.manual_percentage = Number(state.manualFeePercentage);
+    const fee = await getApiClient().post<{ status: string; fee_amount: number; rule?: unknown }>('/fees/calculate', body);
+    state.estimate = { ...state.estimate, fee: { status: fee.status, fee_amount: fee.fee_amount, rule: fee.rule } };
+  } catch (error) {
+    if (error instanceof ApiError && error.error.code === 'FEE_RULE_UNAVAILABLE') state.estimate = { ...state.estimate, fee: { status: 'not_verified', fee_amount: 0 } };
+  }
+  render();
 }
 
 function setAuthContext(context: AuthContext | null): void {
@@ -136,24 +168,58 @@ async function loadDashboard(): Promise<void> {
   finally { dashboardRequestInFlight = false; state.dashboardLoading = false; render(); }
 }
 
-function addFiles(files: FileList | null): void {
-  if (!files?.length) return;
-  const incoming = Array.from(files); const availableSlots = 6 - state.selectedImages.length; const accepted: DemoImage[] = []; const errors: string[] = [];
-  incoming.slice(0, Math.max(0, availableSlots)).forEach((file, index) => { if (!ALLOWED_TYPES.has(file.type)) errors.push(`${file.name}: use JPG, PNG, or WebP.`); else if (file.size > MAX_FILE_SIZE) errors.push(`${file.name}: maximum size is 10 MB.`); else accepted.push({ id: `upload-${Date.now()}-${index}`, name: file.name, src: URL.createObjectURL(file) }); });
+function addSelectedFiles(incoming: File[]): void {
+  if (!incoming.length) return;
+  const availableSlots = 6 - state.selectedImages.length; const accepted: DemoImage[] = []; const errors: string[] = [];
+  incoming.slice(0, Math.max(0, availableSlots)).forEach((file, index) => { if (!ALLOWED_TYPES.has(file.type)) errors.push(`${file.name}: use JPG, PNG, or WebP.`); else if (file.size > MAX_FILE_SIZE) errors.push(`${file.name}: maximum size is 10 MB.`); else accepted.push({ id: `upload-${Date.now()}-${index}`, name: file.name, src: URL.createObjectURL(file), file }); });
   if (incoming.length > availableSlots) errors.push('You can select up to 6 images.'); state.selectedImages = [...state.selectedImages, ...accepted]; state.uploadError = errors.join(' '); render();
 }
+function addFiles(files: FileList | null): void {
+  if (!files?.length) return;
+  addSelectedFiles(Array.from(files));
+}
 function startAnalysis(): void {
-  if (!DEMO_MODE || isAuthenticated()) { void getApiClient().post('/scans', {}).catch((error) => showToast(error instanceof ApiError ? error.message : 'The upload pipeline is not available yet.')); return; }
-  state.analysisStage = 2; render(); window.setTimeout(() => { state.analysisStage = 3; render(); }, 900); window.setTimeout(() => { state.analysisStage = 1; navigate('/identification'); }, 1800);
+  if (!isAuthenticated()) { showToast('Sign in to upload a real product photo.'); return; }
+  const files = state.selectedImages.flatMap((image) => image.file ? [image.file] : []);
+  if (!files.length) { state.uploadError = 'Choose at least one real image before starting analysis.'; render(); return; }
+  state.scanStatus = 'uploading'; state.uploadProgress = 0; state.scanError = ''; state.analysisStage = 1; render();
+  void getApiClient().uploadScan(files, 'upload', (progress) => { state.uploadProgress = progress; if (progress >= 100) state.scanStatus = 'identifying'; render(); }).then((result) => {
+    state.scanResult = result; state.scanStatus = result.status === 'failed' ? 'failed' : 'completed'; state.analysisStage = result.status === 'completed' ? 3 : 0;
+    if (result.status === 'completed') navigate('/identification'); else render();
+  }).catch((error) => {
+    state.scanStatus = 'failed'; state.analysisStage = 0; state.scanError = error instanceof ApiError ? error.message : 'The scan could not be completed.';
+    const details = error instanceof ApiError && typeof error.error.details === 'object' && error.error.details !== null ? error.error.details as { scan_id?: string } : {};
+    if (details.scan_id) state.scanResult = { id: details.scan_id, status: 'failed', source: 'upload', images: [], identified_item: null, ai_mode: 'real', identification_empty: true };
+    render();
+  });
+}
+
+async function openCamera(): Promise<void> {
+  if (!navigator.mediaDevices?.getUserMedia) { state.cameraError = 'Camera access is unavailable. Choose an image from your device.'; render(); document.querySelector<HTMLInputElement>('[data-camera-input]')?.click(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    const modal = document.createElement('div'); modal.className = 'camera-modal'; modal.innerHTML = '<div class="camera-dialog" role="dialog" aria-modal="true" aria-labelledby="camera-title"><h2 id="camera-title">Take a product photo</h2><video autoplay playsinline></video><div class="page-actions"><button class="button button-primary" type="button" data-camera-capture>Take photo</button><button class="button button-secondary" type="button" data-camera-cancel>Cancel</button></div></div>';
+    document.body.appendChild(modal); const video = modal.querySelector('video'); if (video) video.srcObject = stream;
+    const close = () => { stream.getTracks().forEach((track) => track.stop()); modal.remove(); };
+    modal.querySelector('[data-camera-cancel]')?.addEventListener('click', close);
+    modal.querySelector('[data-camera-capture]')?.addEventListener('click', () => { if (!video) return; const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720; canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height); canvas.toBlob((blob) => { if (blob) addSelectedFiles([new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' })]); close(); }, 'image/jpeg', 0.9); });
+  } catch {
+    state.cameraError = 'Camera permission was denied or unavailable. Choose an image from your device instead.'; render(); document.querySelector<HTMLInputElement>('[data-camera-input]')?.click();
+  }
 }
 
 function handleAction(action: string, element: HTMLElement): void {
   if (action === 'scan') { navigate('/scan'); return; } if (action === 'dashboard') { navigate('/dashboard'); return; }
   if (action === 'toggle-avatar-menu') { const menu = document.querySelector<HTMLElement>('[data-avatar-menu]'); const button = element as HTMLButtonElement; if (menu) { menu.hidden = !menu.hidden; button.setAttribute('aria-expanded', String(!menu.hidden)); } return; }
   if (action === 'logout') { if (!isAuthenticated()) { showToast('Demo mode has no active account session.'); return; } void getService().signOut().then(() => { setAuthContext(null); navigate('/login'); }); return; }
-  if (action === 'open-upload') { document.querySelector<HTMLInputElement>('[data-file-input]')?.click(); return; } if (action === 'open-camera') { document.querySelector<HTMLInputElement>('[data-camera-input]')?.click(); return; }
-  if (action === 'remove-image') { state.selectedImages.splice(Number(element.dataset.index), 1); render(); return; } if (action === 'identify') { startAnalysis(); return; }
-  if (action === 'continue-estimate') { navigate('/estimate'); return; } if (action === 'generate-listing') { showToast('Demo action complete: listing generation will be connected in a later phase.'); return; } if (action === 'save-inventory') showToast('Demo action complete: inventory saving will be connected in a later phase.');
+  if (action === 'open-upload') { document.querySelector<HTMLInputElement>('[data-file-input]')?.click(); return; } if (action === 'open-camera') { void openCamera(); return; }
+  if (action === 'remove-image') { const image = state.selectedImages[Number(element.dataset.index)]; if (image?.src) URL.revokeObjectURL(image.src); state.selectedImages.splice(Number(element.dataset.index), 1); render(); return; } if (action === 'identify') { startAnalysis(); return; }
+  if (action === 'save-identification') { void saveIdentification(); return; }
+  if (action === 'retry-scan' && state.scanResult?.id) { state.scanStatus = 'identifying'; state.scanError = ''; render(); void getApiClient().post<import('./services/api').ScanResponse>(`/scans/${state.scanResult.id}/retry`).then((result) => { state.scanResult = result; state.scanStatus = 'completed'; navigate('/identification'); }).catch((error) => { state.scanStatus = 'failed'; state.scanError = error instanceof ApiError ? error.message : 'Retry failed.'; render(); }); return; }
+  if (action === 'continue-estimate') { state.estimateItemId = state.scanResult?.identified_item?.id; navigate('/estimate'); void loadMarketplaces(); void loadEstimate(true); return; }
+  if (action === 'retry-estimate') { void loadEstimate(true); return; }
+  if (action === 'generate-listing') { if (DEMO_MODE && !isAuthenticated()) showToast('Demo action: listing generation is a later phase.'); else navigate('/listing-generator'); return; }
+  if (action === 'save-inventory') { if (DEMO_MODE && !isAuthenticated()) { showToast('Demo action: inventory saving is connected in a later phase.'); return; } void saveInventory(); }
 }
 
 function bindEvents(): void {
@@ -164,17 +230,48 @@ function bindEvents(): void {
   document.querySelector<HTMLFormElement>('[data-password-form]')?.addEventListener('submit', (event) => { event.preventDefault(); void savePassword(event.currentTarget as HTMLFormElement); });
   document.querySelector<HTMLInputElement>('[data-file-input]')?.addEventListener('change', (event) => addFiles((event.currentTarget as HTMLInputElement).files)); document.querySelector<HTMLInputElement>('[data-camera-input]')?.addEventListener('change', (event) => addFiles((event.currentTarget as HTMLInputElement).files));
   const dropZone = document.querySelector<HTMLElement>('[data-drop-zone]'); dropZone?.addEventListener('dragover', (event) => { event.preventDefault(); dropZone.classList.add('is-dragging'); }); dropZone?.addEventListener('dragleave', () => dropZone.classList.remove('is-dragging')); dropZone?.addEventListener('drop', (event) => { event.preventDefault(); dropZone.classList.remove('is-dragging'); addFiles((event as DragEvent).dataTransfer?.files ?? null); }); dropZone?.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); document.querySelector<HTMLInputElement>('[data-file-input]')?.click(); } });
-  document.querySelector<HTMLInputElement>('[data-currency]')?.addEventListener('change', (event) => { state.currency = (event.currentTarget as HTMLSelectElement).value as AppState['currency']; render(); }); document.querySelectorAll<HTMLInputElement>('[data-field]').forEach((input) => input.addEventListener('input', () => { state.identification[input.dataset.field as keyof AppState['identification']] = input.value; })); document.querySelector<HTMLFormElement>('[data-search-form]')?.addEventListener('submit', (event) => { event.preventDefault(); showToast(DEMO_MODE && !isAuthenticated() ? 'Demo search is not connected to live data.' : 'Search is not connected yet.'); });
+  document.querySelector<HTMLInputElement>('[data-currency]')?.addEventListener('change', (event) => { state.currency = (event.currentTarget as HTMLSelectElement).value as AppState['currency']; render(); });
+  document.querySelector<HTMLSelectElement>('[data-estimate-currency]')?.addEventListener('change', (event) => { state.currency = (event.currentTarget as HTMLSelectElement).value as AppState['currency']; state.estimate = undefined; void loadEstimate(true); });
+  document.querySelector<HTMLSelectElement>('[data-estimate-marketplace]')?.addEventListener('change', (event) => { state.estimateMarketplaceId = (event.currentTarget as HTMLSelectElement).value; void calculateFee(); });
+  document.querySelector<HTMLInputElement>('[data-estimate-suggested]')?.addEventListener('change', (event) => { state.suggestedPriceInput = (event.currentTarget as HTMLInputElement).value; void calculateFee(); });
+  document.querySelector<HTMLInputElement>('[data-manual-fee]')?.addEventListener('change', (event) => { state.manualFeePercentage = (event.currentTarget as HTMLInputElement).value; void calculateFee(); });
+  document.querySelectorAll<HTMLInputElement>('[data-field]').forEach((input) => input.addEventListener('input', () => { state.identification[input.dataset.field as keyof AppState['identification']] = input.value; })); document.querySelector<HTMLFormElement>('[data-search-form]')?.addEventListener('submit', (event) => { event.preventDefault(); showToast(DEMO_MODE && !isAuthenticated() ? 'Demo search is not connected to live data.' : 'Search is not connected yet.'); });
 }
 
 async function saveSettings(form: HTMLFormElement): Promise<void> { const parsed = profileSchema.safeParse(Object.fromEntries(new FormData(form).entries())); clearFormState(); if (!parsed.success) { setFormErrors(parsed.error.issues); state.authError = 'Check the profile fields.'; render(); return; } state.settingsSaving = true; render(); try { state.profile = await getService().updateProfile({ display_name: parsed.data.displayName, default_currency: parsed.data.currency }); state.authSuccess = 'Profile saved.'; } catch { state.authError = 'Unable to save your profile right now.'; } finally { state.settingsSaving = false; render(); } }
 async function savePassword(form: HTMLFormElement): Promise<void> { const parsed = resetPasswordSchema.safeParse(Object.fromEntries(new FormData(form).entries())); clearFormState(); if (!parsed.success) { setFormErrors(parsed.error.issues); state.authError = 'Check the password fields.'; render(); return; } state.passwordSaving = true; render(); try { await getService().changePassword(parsed.data.password); state.authSuccess = 'Password updated.'; form.reset(); } catch { state.authError = 'Unable to change your password right now.'; } finally { state.passwordSaving = false; render(); } }
 
+async function saveIdentification(): Promise<void> {
+  const itemId = state.scanResult?.identified_item?.id;
+  if (!itemId || !state.scanResult) return;
+  const value = (field: string) => document.querySelector<HTMLInputElement>(`[data-field="${field}"]`)?.value.trim() ?? '';
+  state.itemSaving = true; render();
+  try {
+    const item = await getApiClient().patch<import('./services/api').IdentifiedItem>(`/items/${itemId}`, {
+      name: value('name') || 'Unknown item', brand_text: value('brand') || null, model: value('model') || null,
+      category_text: value('category') || null, product_type: value('productType') || null, condition: value('condition') || null,
+      key_attributes: value('attributes') ? { text: value('attributes') } : {}, review_status: 'reviewed',
+    });
+    state.scanResult = { ...state.scanResult, identified_item: item };
+    state.toast = 'Identification changes saved.';
+  } catch (error) { state.scanError = error instanceof ApiError ? error.message : 'Identification changes could not be saved.'; }
+  finally { state.itemSaving = false; render(); }
+}
+
+async function saveInventory(): Promise<void> {
+  const item = state.scanResult?.identified_item; const estimate = state.estimate?.estimate;
+  if (!item || !estimate) return;
+  state.inventorySaving = true; render();
+  try { await getApiClient().post('/inventory', { identified_item_id: item.id, price_estimate_id: estimate.id, item_name: item.name, condition: item.condition ?? null, status: 'owned', estimated_value: estimate.typical, estimated_value_currency: estimate.currency, attributes: item.key_attributes ?? {} }); showToast('Saved to inventory.'); }
+  catch (error) { showToast(error instanceof ApiError ? error.message : 'Could not save this item.'); }
+  finally { state.inventorySaving = false; render(); }
+}
+
 async function initialize(): Promise<void> {
-  window.addEventListener('popstate', () => { clearFormState(); render(); void loadDashboard(); });
+  window.addEventListener('popstate', () => { clearFormState(); render(); void loadDashboard(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); } });
   if (DEMO_MODE) { try { authService = getAuthService(); } catch { /* Demo mode can run without Supabase variables. */ } state.authStatus = 'unauthenticated'; render(); return; }
   try { const service = getService(); setAuthContext(await service.getContext()); unsubscribeAuth = service.onAuthStateChange((context) => { setAuthContext(context); render(); void loadDashboard(); }); } catch (error) { state.authStatus = 'error'; state.authError = error instanceof Error ? error.message : 'Authentication is not configured.'; }
-  render(); void loadDashboard();
+  render(); void loadDashboard(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); }
 }
 
 export function startApp(): void { void initialize(); }

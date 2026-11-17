@@ -60,7 +60,17 @@ export const feeCalculationSchema = z.object({
   marketplace_id: uuid,
   sale_price: z.number().positive(),
   currency,
+  manual_percentage: z.number().min(0).max(100).optional(),
 }).strict();
+
+export const estimateCreateSchema = z.object({
+  currency,
+  purchase_price: z.number().nonnegative().nullable().optional(),
+  marketplace_id: uuid.nullable().optional(),
+  force: z.boolean().optional().default(false),
+}).strict();
+
+export const pricingHistorySchema = paginationSchema.extend({ item_id: uuid.optional() }).strict();
 
 export const listingListSchema = paginationSchema.strict();
 export const listingCreateSchema = z.object({
@@ -78,12 +88,17 @@ export const listingPatchSchema = listingCreateSchema.omit({ inventory_item_id: 
 
 export const itemPatchSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
+  brand_text: z.string().trim().max(200).nullable().optional(),
+  category_text: z.string().trim().max(200).nullable().optional(),
+  product_type: z.string().trim().max(200).nullable().optional(),
   model: z.string().max(200).nullable().optional(),
   category_id: uuid.nullable().optional(),
   brand_id: uuid.nullable().optional(),
   condition: z.string().max(100).nullable().optional(),
   key_attributes: jsonObject.optional(),
+  identification_notes: z.string().max(4000).nullable().optional(),
   review_status: z.enum(['needs_review', 'reviewed']).optional(),
 }).strict();
 
 export const stubRetrySchema = z.object({}).strict();
+export const scanSourceSchema = z.object({ source: z.enum(['upload', 'camera']).default('upload') }).strict();

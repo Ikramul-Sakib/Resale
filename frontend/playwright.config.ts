@@ -12,7 +12,7 @@ export default defineConfig({
     ...devices['Desktop Chrome'],
   },
   webServer: [
-    { command: 'npm --prefix .. run start --workspace backend', url: 'http://127.0.0.1:4000/health', reuseExistingServer: true, timeout: 120_000 },
-    { command: 'npm run dev -- --host 127.0.0.1', url: 'http://127.0.0.1:5173', reuseExistingServer: true, timeout: 120_000 },
+    { command: 'npm run start --workspace backend', cwd: '..', url: 'http://127.0.0.1:4000/health', reuseExistingServer: true, timeout: 120_000 },
+    { command: 'npm run dev -- --host 127.0.0.1', cwd: '.', url: 'http://127.0.0.1:5173', reuseExistingServer: true, timeout: 120_000 },
   ],
 });

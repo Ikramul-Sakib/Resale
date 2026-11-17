@@ -64,7 +64,7 @@ Common status codes:
 | 409 | Unique conflict |
 | 422 | Valid request but no usable configured fee rule |
 | 429 | Rate limit exceeded |
-| 501 | Gemini/upload-dependent feature intentionally unavailable in Phase 4 |
+| 501 | Feature intentionally unavailable in the current phase |
 
 ## Endpoints
 
@@ -144,6 +144,21 @@ The backend calls the `record_sale` database function. It updates the authentica
 ```
 
 Fee calculation reads a verified non-placeholder `marketplace_fee_rules` row. The response includes the rule's `source` and `verified_at`. If no verified rule exists, the API returns `422 FEE_RULE_UNAVAILABLE`; it never invents a percentage.
+When a rule is unavailable, the client may send `manual_percentage`; the response is marked
+`user_entered_unverified` and has no verification timestamp.
+
+### AI price estimates
+
+- `POST /api/v1/items/:id/estimate`
+- `GET /api/v1/estimates/:id`
+- `GET /api/v1/pricing/history?item_id=:id&page=1&limit=25`
+
+The estimate request accepts `{ "currency": "USD", "purchase_price": 20, "marketplace_id": null,
+"force": false }`. The item must have been reviewed by the user. Repeated requests within one
+minute return the cached estimate unless `force` is true. Currency changes request a new estimate.
+Every response includes `ai_mode`, `data_source`, `model_id`, `prompt_version`, `market_data_status`,
+and an uncertainty note when the model returned one. Prices are always labelled AI preliminary
+estimates; live marketplace data is not used. No comparables or confidence scores are fabricated.
 
 ### Analytics
 
@@ -155,12 +170,44 @@ The response is calculated from the authenticated user's inventory and sales row
 
 - `GET /api/v1/scans?page=1&limit=25`
 - `GET /api/v1/scans/:id`
+- `POST /api/v1/scans` (multipart upload)
+- `POST /api/v1/scans/:id/retry`
 - `GET /api/v1/items/:id`
 - `PATCH /api/v1/items/:id`
 - `GET /api/v1/pricing/history?page=1&limit=25`
 - `GET /api/v1/estimates/:id`
 
-Editable item fields include `name`, `model`, `category_id`, `brand_id`, `condition`, `key_attributes`, and `review_status`.
+`POST /api/v1/scans` expects one to six multipart files under `images` and an optional
+`source=upload|camera` field. The backend checks JPG/PNG/WebP magic bytes, limits each image
+to 10 MB, stores files privately under `<user_id>/<scan_id>/<file>`, and returns one-hour
+signed URLs. The response includes `status`, `images`, `identified_item`, `ai_mode`, and
+`identification_empty`.
+
+Example response shape:
+
+```json
+{
+  "id": "<scan-uuid>",
+  "status": "completed",
+  "source": "upload",
+  "ai_mode": "mock",
+  "identification_empty": true,
+  "images": [{ "signed_url": "<private-signed-url>", "mime_type": "image/jpeg" }],
+  "identified_item": {
+    "name": "Unknown item",
+    "identification_source": "mock",
+    "identification_notes": "Demo mock result — no Gemini call was made."
+  }
+}
+```
+
+`ai_mode=mock` is explicit and means no Gemini call was made. It is never presented as real
+AI output. `ai_mode=real` is used only when the backend has both `GEMINI_API_KEY` and the
+configured `GEMINI_MODEL`.
+
+Editable item fields include `name`, `brand_text`, `model`, `category_text`, `product_type`,
+`condition`, `key_attributes`, `identification_notes`, and `review_status`. Ownership is
+always derived from the verified bearer token.
 
 ### Listings
 
@@ -171,14 +218,11 @@ Editable item fields include `name`, `model`, `category_id`, `brand_id`, `condit
 
 `POST /api/v1/listings` saves an editable draft. It does not publish to an external marketplace.
 
-### Phase 4 stubs
+### Remaining stubs
 
 These routes are authenticated and intentionally return `501 NOT_IMPLEMENTED` with a clear message until later phases:
 
-- `POST /api/v1/scans`
-- `POST /api/v1/scans/:id/retry`
-- `POST /api/v1/items/:id/estimate`
 - `POST /api/v1/listings/generate`
 - `GET /api/v1/analytics/resale-index`
 
-They do not fabricate AI results, upload states, comparables, or analytics.
+They do not fabricate price estimates, listing text, comparables, or analytics.

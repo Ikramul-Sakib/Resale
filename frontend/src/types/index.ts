@@ -19,6 +19,7 @@ export interface DemoImage {
   id: string;
   name: string;
   src?: string;
+  file?: File;
   isDemo?: boolean;
 }
 
@@ -46,9 +47,24 @@ export interface AppState {
   dashboardLoading: boolean;
   dashboardData?: import('../pages/dashboard').DashboardView;
   selectedImages: DemoImage[];
+  scanStatus: 'idle' | 'uploading' | 'identifying' | 'completed' | 'failed';
+  uploadProgress: number;
+  scanError: string;
+  scanResult?: import('../services/api').ScanResponse;
+  cameraError: string;
+  itemSaving: boolean;
   analysisStage: AnalysisStage;
   uploadError: string;
   toast: string;
   currency: 'USD' | 'EUR' | 'GBP';
   identification: IdentificationFields;
+  estimateLoading: boolean;
+  estimateError: string;
+  estimate?: import('../services/api').EstimateResponse;
+  estimateItemId?: string;
+  marketplaces: import('../services/api').Marketplace[];
+  estimateMarketplaceId: string;
+  suggestedPriceInput: string;
+  manualFeePercentage: string;
+  inventorySaving: boolean;
 }

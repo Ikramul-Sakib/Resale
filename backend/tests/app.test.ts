@@ -125,6 +125,7 @@ function makeServices(): { services: Services; items: InventoryItem[]; sales: Sa
     },
     fees: {
       async calculate(input): Promise<FeeCalculationResult> {
+        if (input.manual_percentage !== undefined) return { marketplace_id: input.marketplace_id, sale_price: input.sale_price, currency: input.currency, fee_amount: input.sale_price * input.manual_percentage / 100, status: 'user_entered_unverified', rule: { id: null, name: 'User-entered percentage (unverified)', fee_type: 'percentage', source: 'user_input', verified_at: null, percentage_rate: input.manual_percentage, fixed_amount: null, currency: input.currency } };
         return {
           marketplace_id: input.marketplace_id,
           sale_price: input.sale_price,
@@ -165,6 +166,8 @@ function makeServices(): { services: Services; items: InventoryItem[]; sales: Sa
         if (userId !== USER_A || id !== 'scan-a') throw new AppError(404, 'NOT_FOUND', 'Scan was not found.');
         return { id, user_id: userId };
       },
+      async create() { throw new AppError(501, 'NOT_IMPLEMENTED', 'This feature requires the Gemini or image upload pipeline and is not enabled yet.'); },
+      async retry() { throw new AppError(501, 'NOT_IMPLEMENTED', 'This feature requires the Gemini or image upload pipeline and is not enabled yet.'); },
     },
     items: {
       async get(userId, id) {
@@ -196,6 +199,7 @@ function makeServices(): { services: Services; items: InventoryItem[]; sales: Sa
       },
     },
     pricing: {
+      async estimate(userId, itemId) { if (userId !== USER_A || itemId !== '10000000-0000-4000-8000-0000000000a1') throw new AppError(404, 'NOT_FOUND', 'Item was not found.'); return { estimate: {}, ai_mode: 'mock' as const, market_data_status: 'not_connected' as const, fee: null }; },
       async history(userId, options) { return paginate([{ id: 'estimate-a', user_id: userId }], options.page, options.limit); },
     },
     estimates: {
@@ -298,6 +302,14 @@ describe('ResaleIQ API', () => {
     expect(update.status).toBe(404);
   });
 
+  it('prevents cross-user scan reads and item edits', async () => {
+    const { app } = makeApp();
+    const scan = await request(app).get('/api/v1/scans/20000000-0000-4000-8000-0000000000b1').set('Authorization', 'Bearer user-a-token');
+    expect(scan.status).toBe(404);
+    const item = await request(app).patch('/api/v1/items/10000000-0000-4000-8000-0000000000b1').set('Authorization', 'Bearer user-a-token').send({ name: 'Injected' });
+    expect(item.status).toBe(404);
+  });
+
   it('records a sale and marks the inventory item sold through the service transaction boundary', async () => {
     const { app, items, sales } = makeApp();
     const response = await request(app).post('/api/v1/sales').set('Authorization', 'Bearer user-a-token').send({
@@ -322,6 +334,19 @@ describe('ResaleIQ API', () => {
     });
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ fee_amount: 10, rule: { source: 'test fixture', verified_at: now() } });
+  });
+
+  it('marks a user-entered fee percentage as unverified', async () => {
+    const { app } = makeApp();
+    const response = await request(app).post('/api/v1/fees/calculate').set('Authorization', 'Bearer user-a-token').send({ marketplace_id: MARKETPLACE_ID, sale_price: 100, currency: 'USD', manual_percentage: 12 });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ fee_amount: 12, status: 'user_entered_unverified', rule: { verified_at: null, source: 'user_input' } });
+  });
+
+  it('does not estimate an item owned by another user', async () => {
+    const { app } = makeApp();
+    const response = await request(app).post('/api/v1/items/10000000-0000-4000-8000-0000000000b1/estimate').set('Authorization', 'Bearer user-a-token').send({ currency: 'USD' });
+    expect(response.status).toBe(404);
   });
 
   it('returns database-backed analytics through the service contract', async () => {

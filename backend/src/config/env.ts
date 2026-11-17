@@ -16,6 +16,15 @@ const envSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  GEMINI_MODEL: z.string().trim().min(1).optional(),
+  GEMINI_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(2),
+  GEMINI_MOCK: z.string().optional().default('false').transform((value) => value.toLowerCase() === 'true'),
+}).superRefine((value, context) => {
+  if (value.GEMINI_API_KEY && !value.GEMINI_MODEL) {
+    context.addIssue({ code: 'custom', path: ['GEMINI_MODEL'], message: 'GEMINI_MODEL is required when GEMINI_API_KEY is set.' });
+  }
 });
 
 export type AppEnv = z.infer<typeof envSchema> & { corsOrigins: string[] };

@@ -8,21 +8,26 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gemini:smoke": "tsx scripts/gemini-smoke.ts",
+    "gemini:price-smoke": "tsx scripts/gemini-price-smoke.ts"
   },
   "dependencies": {
+    "@google/genai": "^3.4.0",
     "@supabase/supabase-js": "2.119.0",
     "cors": "2.8.6",
     "dotenv": "18.0.10",
     "express": "5.3.0",
     "express-rate-limit": "8.7.4",
     "helmet": "8.3.0",
+    "multer": "^2.5.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "@types/cors": "2.8.19",
     "@types/express": "5.0.3",
+    "@types/multer": "^2.3.0",
     "@types/node": "26.6.6",
     "@types/supertest": "7.2.1",
     "eslint": "9.39.5",
