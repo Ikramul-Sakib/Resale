@@ -5,6 +5,9 @@ interface LayoutProps {
   activeScreen: ScreenId;
   content: string;
   toast: string;
+  demoMode: boolean;
+  displayName: string;
+  email: string;
 }
 
 const navItems: Array<{ id: ScreenId; label: string; icon: string }> = [
@@ -22,7 +25,7 @@ const navItems: Array<{ id: ScreenId; label: string; icon: string }> = [
 function renderNavItem(item: (typeof navItems)[number], activeScreen: ScreenId): string {
   const active = activeScreen === item.id;
   return `
-    <button class="nav-item${active ? ' is-active' : ''}" type="button" data-screen="${item.id}" ${
+    <button class="nav-item${active ? ' is-active' : ''}" type="button" data-path="/${item.id}" ${
       active ? 'aria-current="page"' : ''
     }>
       <i data-lucide="${item.icon}" aria-hidden="true"></i>
@@ -31,7 +34,10 @@ function renderNavItem(item: (typeof navItems)[number], activeScreen: ScreenId):
   `;
 }
 
-export function renderLayout({ activeScreen, content, toast }: LayoutProps): string {
+export function renderLayout({ activeScreen, content, toast, demoMode, displayName, email }: LayoutProps): string {
+  const safeName = escapeHtml(displayName || 'Account');
+  const safeEmail = escapeHtml(email);
+  const initials = displayName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'U';
   return `
     <div class="app-shell">
       <aside class="sidebar" aria-label="Primary navigation">
@@ -56,8 +62,16 @@ export function renderLayout({ activeScreen, content, toast }: LayoutProps): str
             />
           </form>
           <div class="topbar-actions">
-            <span class="demo-pill" title="This frontend is running with mock data">Demo data</span>
-            <span class="avatar" aria-label="Alex Rivera">AR</span>
+            ${demoMode ? '<span class="demo-pill" title="This frontend is running with mock data">Demo data</span>' : ''}
+            <div class="avatar-menu-wrap">
+              <button class="avatar avatar-button" type="button" data-action="toggle-avatar-menu" aria-label="Open account menu" aria-expanded="false">${initials}</button>
+              <div class="avatar-menu" data-avatar-menu hidden>
+                <strong>${safeName}</strong>
+                <span>${safeEmail}</span>
+                <a href="/settings" data-path="/settings">Settings</a>
+                <button type="button" data-action="logout">Log out</button>
+              </div>
+            </div>
           </div>
         </header>
         <main class="page-content">${content}</main>

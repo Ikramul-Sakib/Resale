@@ -3,3 +3,6 @@
 !.env.example
 node_modules/
 dist/
+supabase/.temp/
+supabase/.branches/
+frontend/test-results/

@@ -11,9 +11,9 @@ const labels: Record<Exclude<ScreenId, 'dashboard' | 'scan' | 'identification' |
   settings: 'Settings',
 };
 
-export function renderPlaceholderPage(screen: Exclude<ScreenId, 'dashboard' | 'scan' | 'identification' | 'estimate'>): string {
+export function renderPlaceholderPage(screen: Exclude<ScreenId, 'dashboard' | 'scan' | 'identification' | 'estimate'>, demoMode = false): string {
   return `
-    ${renderPageHeader(labels[screen], 'This area will be connected in a later ResaleIQ phase.', { demoPill: true })}
+    ${renderPageHeader(labels[screen], 'This area will be connected in a later ResaleIQ phase.', { demoPill: demoMode })}
     <article class="card phase-card">
       <i data-lucide="construction" aria-hidden="true"></i>
       <h2>Frontend foundation ready</h2>

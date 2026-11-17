@@ -11,6 +11,8 @@ export type ScreenId =
   | 'analytics'
   | 'settings';
 
+export type AuthPageId = 'login' | 'register' | 'forgot-password' | 'reset-password';
+
 export type AnalysisStage = 0 | 1 | 2 | 3;
 
 export interface DemoImage {
@@ -31,6 +33,18 @@ export interface IdentificationFields {
 
 export interface AppState {
   screen: ScreenId;
+  authPage: AuthPageId | null;
+  authStatus: 'loading' | 'authenticated' | 'unauthenticated' | 'error';
+  authError: string;
+  fieldErrors: Record<string, string>;
+  user: { id: string; email?: string } | null;
+  profile: import('../services/supabase').Profile | null;
+  authLoading: boolean;
+  authSuccess: string;
+  settingsSaving: boolean;
+  passwordSaving: boolean;
+  dashboardLoading: boolean;
+  dashboardData?: import('../pages/dashboard').DashboardView;
   selectedImages: DemoImage[];
   analysisStage: AnalysisStage;
   uploadError: string;

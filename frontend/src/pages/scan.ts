@@ -22,7 +22,7 @@ function statusLabel(stage: AppState['analysisStage'], step: number): string {
   return 'Waiting';
 }
 
-export function renderScanPage(state: AppState): string {
+export function renderScanPage(state: AppState, demoMode = false): string {
   const progress = state.analysisStage === 0 ? 0 : Math.min(100, state.analysisStage * 33.333);
   const identifyDisabled = state.selectedImages.length === 0 || state.analysisStage > 0;
 
@@ -62,7 +62,7 @@ export function renderScanPage(state: AppState): string {
 
     <div class="page-actions">
       <button class="button button-primary" type="button" data-action="identify" ${identifyDisabled ? 'disabled' : ''}>
-        ${state.analysisStage > 0 ? 'Analyzing demo photos…' : 'Identify & Estimate Price'}
+        ${state.analysisStage > 0 ? (demoMode ? 'Analyzing demo photos…' : 'Submitting…') : 'Identify & Estimate Price'}
       </button>
     </div>
   `;
