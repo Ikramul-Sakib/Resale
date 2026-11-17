@@ -46,7 +46,10 @@ export const priceEstimateSchema = z.object({
   typical: z.number().finite().positive(),
   high: z.number().finite().positive(),
   suggested_selling_price: z.number().finite().positive(),
-  currency: z.literal('BDT'),
+  // Keep parsing the model's three-letter response so a mismatched currency
+  // can produce the specific safe error below. Application/API inputs and
+  // persisted data remain BDT-only.
+  currency: z.string().regex(/^[A-Z]{3}$/),
   explanation: z.string().trim().min(1).max(4000),
   factors: z.array(priceFactorSchema).max(12).default([]),
   methodology: z.string().trim().min(1).max(4000),
@@ -61,7 +64,7 @@ export const priceEstimateJsonSchema = {
     typical: { type: 'number', description: 'Positive typical preliminary estimate.' },
     high: { type: 'number', description: 'Positive upper preliminary estimate.' },
     suggested_selling_price: { type: 'number', description: 'Suggested price within a sensible band around the range.' },
-    currency: { type: 'string', description: 'Three-letter requested currency code.' },
+    currency: { type: 'string', description: 'Must be the requested BDT currency code.' },
     explanation: { type: 'string', description: 'Evidence-based explanation without comparables or live market claims.' },
     factors: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, impact_type: { type: 'string', enum: ['percentage', 'amount'] }, impact: { type: 'number' } }, required: ['label', 'impact_type', 'impact'], additionalProperties: false } },
     methodology: { type: 'string' },
