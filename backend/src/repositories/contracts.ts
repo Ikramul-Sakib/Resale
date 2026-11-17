@@ -151,7 +151,8 @@ export interface ScanRecord {
 }
 
 export interface ListingCreateInput {
-  inventory_item_id: string;
+  inventory_item_id?: string | null;
+  identified_item_id?: string | null;
   marketplace_id?: string | null;
   title: string;
   description?: string | null;
@@ -163,6 +164,13 @@ export interface ListingCreateInput {
 }
 
 export type ListingPatchInput = Partial<Omit<ListingCreateInput, 'inventory_item_id'>>;
+
+export interface ListingListOptions extends PaginationOptions {
+  item_id?: string;
+  marketplace_id?: string;
+  search?: string;
+  include_archived?: boolean;
+}
 
 export interface Repositories {
   profiles: {
@@ -181,6 +189,7 @@ export interface Repositories {
   };
   reference: {
     listMarketplaces(): Promise<Marketplace[]>;
+    getMarketplaceById(id: string): Promise<Marketplace>;
   };
   fees: {
     calculate(input: FeeCalculationInput): Promise<FeeCalculationResult>;
@@ -209,10 +218,14 @@ export interface Repositories {
     update(userId: string, id: string, input: ItemPatchInput): Promise<Record<string, unknown>>;
   };
   listings: {
-    list(userId: string, options: PaginationOptions): Promise<Page<ListingDraft>>;
+    list(userId: string, options: ListingListOptions): Promise<Page<ListingDraft>>;
+    getById(userId: string, id: string): Promise<ListingDraft>;
     create(userId: string, input: ListingCreateInput): Promise<ListingDraft>;
     update(userId: string, id: string, input: ListingPatchInput): Promise<ListingDraft>;
     delete(userId: string, id: string): Promise<void>;
+  };
+  audit: {
+    create(userId: string, action: string, entityType: string, entityId: string, metadata: Record<string, unknown>): Promise<void>;
   };
   pricing: {
     history(userId: string, options: PricingHistoryOptions): Promise<Page<Record<string, unknown>>>;
@@ -220,6 +233,7 @@ export interface Repositories {
   estimates: {
     create(userId: string, input: EstimateCreateInput): Promise<Record<string, unknown>>;
     findRecent(userId: string, itemId: string, currency: string, since: string): Promise<Record<string, unknown> | null>;
+    findLatestForItem(userId: string, itemId: string, currency?: string): Promise<Record<string, unknown> | null>;
     getById(userId: string, id: string): Promise<Record<string, unknown>>;
   };
 }

@@ -199,6 +199,24 @@
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (max-width: 760px) { .estimate-controls { grid-template-columns: 1fr; } .estimate-meta { align-items: flex-start; } }
 
+.listing-disclaimer { margin-bottom: 16px; padding: 11px 14px; border: 1px solid #f1d38a; border-radius: 10px; color: #805b00; background: #fff8df; font-size: 12px; }
+.listing-generator-form, .generated-listing-card, .drafts-card { margin-bottom: 16px; }
+.listing-setup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.listing-setup-grid textarea { min-height: 76px; }
+.market-data-note { color: var(--color-text-muted); font-size: 11px; }
+.unsaved-warning { color: #a15c00; font-size: 12px; font-weight: 650; }
+.character-count, .form-field small { color: var(--color-text-muted); font-size: 10px; }
+.title-warning { margin: 4px 0 12px; color: #b42318; font-size: 12px; }
+.generated-listing-actions, .draft-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.draft-list { display: grid; gap: 8px; }
+.draft-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--color-border); }
+.draft-row > div:first-child { display: grid; gap: 4px; min-width: 0; }
+.draft-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.draft-row span { color: var(--color-text-muted); font-size: 11px; }
+.listing-loading { display: grid; gap: 14px; min-height: 160px; align-content: center; margin-bottom: 16px; }
+.empty-copy { color: var(--color-text-muted); font-size: 12px; }
+@media (max-width: 760px) { .listing-setup-grid { grid-template-columns: 1fr; } .draft-row { align-items: flex-start; flex-direction: column; } }
+
 .auth-page {
   display: grid;
   min-height: 100vh;

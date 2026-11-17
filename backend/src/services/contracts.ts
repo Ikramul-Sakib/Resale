@@ -8,6 +8,7 @@ import type {
   ItemPatchInput,
   ListingCreateInput,
   ListingPatchInput,
+  ListingListOptions,
   PaginationOptions,
   EstimateRequestInput,
   PricingHistoryOptions,
@@ -18,6 +19,27 @@ import type {
 import type { AuthenticatedUser, InventoryItem, ListingDraft, Marketplace, Page, SalesRecord } from '../types/index.js';
 import type { ScanUploadFile, ScanService } from './scans.js';
 import type { PricingService } from './pricing/service.js';
+import type { ListingService } from './listings.js';
+import type { ListingGenerationResult } from './gemini/types.js';
+
+export interface ListingGenerateInput {
+  item_id: string;
+  marketplace_id: string;
+  currency: string;
+  tone: 'concise' | 'detailed' | 'friendly' | 'neutral';
+  notes?: string | null;
+  asking_price?: number | null;
+}
+
+export interface ListingGenerateView {
+  generated: ListingGenerationResult;
+  item_id: string;
+  inventory_item_id: string | null;
+  marketplace: Marketplace;
+  ai_mode: 'real' | 'mock';
+  estimate_id: string | null;
+  unsaved: true;
+}
 
 export interface Services {
   auth: {
@@ -54,7 +76,9 @@ export interface Services {
     update(userId: string, id: string, input: ItemPatchInput): Promise<Record<string, unknown>>;
   };
   listings: {
-    list(userId: string, options: PaginationOptions): Promise<Page<ListingDraft>>;
+    generate(userId: string, input: ListingGenerateInput): Promise<ListingGenerateView>;
+    list(userId: string, options: ListingListOptions): Promise<Page<ListingDraft>>;
+    get(userId: string, id: string): Promise<ListingDraft>;
     create(userId: string, input: ListingCreateInput): Promise<ListingDraft>;
     update(userId: string, id: string, input: ListingPatchInput): Promise<ListingDraft>;
     delete(userId: string, id: string): Promise<void>;
@@ -68,8 +92,9 @@ export interface Services {
   };
 }
 
-export function createServices(repositories: Repositories, scanPipeline?: ScanService, pricingPipeline?: PricingService): Services {
+export function createServices(repositories: Repositories, scanPipeline?: ScanService, pricingPipeline?: PricingService, listingPipeline?: ListingService): Services {
   const pricingEngine = pricingPipeline ?? ({ estimate: () => Promise.reject(new Error('Pricing pipeline is not configured.')), history: (userId: string, options: PricingHistoryOptions) => repositories.pricing.history(userId, options) } as unknown as PricingService);
+  const listingEngine = listingPipeline ?? ({ generate: () => Promise.reject(new Error('Listing pipeline is not configured.')) } as unknown as ListingService);
   return {
     auth: {
       async me(user) {
@@ -101,10 +126,12 @@ export function createServices(repositories: Repositories, scanPipeline?: ScanSe
       update: (userId, id, input) => repositories.items.update(userId, id, input),
     },
     listings: {
-      list: (userId, options) => repositories.listings.list(userId, options),
-      create: (userId, input) => repositories.listings.create(userId, input),
-      update: (userId, id, input) => repositories.listings.update(userId, id, input),
-      delete: (userId, id) => repositories.listings.delete(userId, id),
+      generate: (userId, input) => listingEngine.generate(userId, input),
+      list: (userId, options) => listingEngine.list(userId, options),
+      get: (userId, id) => listingEngine.get(userId, id),
+      create: (userId, input) => listingEngine.create(userId, input),
+      update: (userId, id, input) => listingEngine.update(userId, id, input),
+      delete: (userId, id) => listingEngine.delete(userId, id),
     },
     pricing: { estimate: (userId, itemId, input) => pricingEngine.estimate(userId, itemId, input), history: (userId, options) => pricingEngine.history(userId, options) },
     estimates: { get: (userId, id) => repositories.estimates.getById(userId, id) },

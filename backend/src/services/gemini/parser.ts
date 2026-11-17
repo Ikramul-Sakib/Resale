@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { GeminiServiceError } from './errors.js';
 import type { IdentificationResult } from './types.js';
 import type { PriceEstimateResult } from './types.js';
+import type { ListingGenerationResult } from './types.js';
 
 const nullableText = z.string().trim().max(4000).nullable().optional().default(null);
 
@@ -71,6 +72,31 @@ export const priceEstimateJsonSchema = {
   additionalProperties: false,
 } as const;
 
+export const listingGenerationSchema = z.object({
+  title: z.string().trim().min(1).max(300),
+  description: z.string().trim().min(1).max(10000),
+  condition_description: z.string().trim().min(1).max(2000),
+  selling_points: z.array(z.string().trim().min(1).max(500)).min(1).max(12),
+  suggested_price: z.number().finite().positive().nullable(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  keywords: z.array(z.string().trim().min(1).max(80)).max(20),
+}).strict();
+
+export const listingGenerationJsonSchema = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', description: 'SEO-friendly title within the requested marketplace limit.' },
+    description: { type: 'string', description: 'Detailed factual description using confirmed data only.' },
+    condition_description: { type: 'string', description: 'Condition wording based only on confirmed condition.' },
+    selling_points: { type: 'array', items: { type: 'string' }, description: 'Factual selling points only.' },
+    suggested_price: { type: ['number', 'null'], description: 'Must exactly match the supplied estimate or edited price.' },
+    currency: { type: 'string', description: 'The supplied target currency.' },
+    keywords: { type: 'array', items: { type: 'string' }, description: 'Search keywords based only on confirmed data.' },
+  },
+  required: ['title', 'description', 'condition_description', 'selling_points', 'suggested_price', 'currency', 'keywords'],
+  additionalProperties: false,
+} as const;
+
 function stripJsonFence(value: string): string {
   return value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 }
@@ -99,6 +125,18 @@ export function parsePriceEstimateResponse(value: string | null | undefined, req
   const minSuggested = parsed.data.low * 0.75;
   const maxSuggested = parsed.data.high * 1.25;
   if (parsed.data.suggested_selling_price < minSuggested || parsed.data.suggested_selling_price > maxSuggested) throw new GeminiServiceError('GEMINI_MALFORMED_RESPONSE', 'Gemini returned an unreasonable suggested selling price.', true);
+  return parsed.data;
+}
+
+export function parseListingGenerationResponse(value: string | null | undefined, options: { currency: string; suggestedPrice: number | null; titleMaxLength: number }): ListingGenerationResult {
+  if (!value?.trim()) throw new GeminiServiceError('GEMINI_EMPTY_RESULT', 'Gemini returned no listing draft.', true);
+  let json: unknown;
+  try { json = JSON.parse(stripJsonFence(value)); } catch { throw new GeminiServiceError('GEMINI_MALFORMED_RESPONSE', 'Gemini returned malformed listing data.', true); }
+  const parsed = listingGenerationSchema.safeParse(json);
+  if (!parsed.success) throw new GeminiServiceError('GEMINI_MALFORMED_RESPONSE', 'Gemini returned an invalid listing shape.', true);
+  if (parsed.data.title.length > options.titleMaxLength) throw new GeminiServiceError('GEMINI_MALFORMED_RESPONSE', 'Gemini returned a title above the marketplace limit.', true);
+  if (parsed.data.currency !== options.currency) throw new GeminiServiceError('GEMINI_MALFORMED_RESPONSE', 'Gemini returned a different currency than requested.', true);
+  if (parsed.data.suggested_price !== options.suggestedPrice) throw new GeminiServiceError('GEMINI_MALFORMED_RESPONSE', 'Gemini returned a price different from the confirmed estimate.', true);
   return parsed.data;
 }
 

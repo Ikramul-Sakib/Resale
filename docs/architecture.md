@@ -39,9 +39,10 @@ best-effort storage and scan cleanup.
 
 `GEMINI_MODEL` is mandatory when `GEMINI_API_KEY` is configured; there is no guessed model
 default. `GEMINI_MOCK=true` forces the clearly labelled mock adapter for local/E2E tests.
-The optional `backend/scripts/gemini-smoke.ts` command is the only documented real-call
-smoke test. Price estimation and listing generation remain typed placeholders for later
-phases.
+The optional `backend/scripts/gemini-smoke.ts`, `gemini-price-smoke.ts`, and
+`gemini-listing-smoke.ts` commands are documented manual real-call smoke tests. Price estimation
+and listing generation remain backend-only and use the explicit mock adapter for automated runs
+when real Gemini credentials are not enabled.
 
 ## Phase 4 boundary
 
@@ -127,3 +128,18 @@ used when `GEMINI_MOCK=true` or credentials are absent and is labelled in every 
 `NotConfiguredMarketDataProvider`, so the UI reports market data as `not connected`; no marketplace
 is scraped and no live data is claimed. Fee calculations use only verified database rules, or an
 explicit user-entered percentage marked unverified.
+
+## Phase 8 listing generation
+
+Listing generation is isolated in `backend/src/services/listings.ts` and the Gemini adapter. It
+resolves either an owner-scoped inventory item or a confirmed identified item, requires
+`review_status=reviewed`, and uses only confirmed fields plus the latest estimate or an explicit
+edited price. Generation is deliberately unsaved; the user reviews and edits the result before
+`POST /listings` persists it. Prompt notes are length-limited and sanitized, and the prompt treats
+all text as data rather than instructions.
+
+Marketplace title limits are stored on the reference marketplace row. The listing parser rejects
+malformed output, unsupported claims are prohibited by the prompt, and the returned price must
+exactly match the estimate or user-entered price. The mock adapter is explicit in the API and UI.
+Saved drafts create owner-scoped audit events. Delete is a soft archive, and there is no publish
+endpoint or marketplace publishing integration.

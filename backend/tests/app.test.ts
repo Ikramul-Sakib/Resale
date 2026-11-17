@@ -180,9 +180,11 @@ function makeServices(): { services: Services; items: InventoryItem[]; sales: Sa
       },
     },
     listings: {
+      async generate() { throw new AppError(501, 'NOT_IMPLEMENTED', 'Listing generation is not configured.'); },
       async list(userId, options) { return paginate(listings.filter((listing) => listing.user_id === userId), options.page, options.limit); },
+      async get(userId, id) { const listing = listings.find((candidate) => candidate.id === id && candidate.user_id === userId); if (!listing) throw new AppError(404, 'NOT_FOUND', 'Listing draft was not found.'); return listing; },
       async create(userId, input) {
-        const listing = { ...input, id: 'listing-1', user_id: userId, attributes: input.attributes, created_at: now(), updated_at: now() } as ListingDraft;
+        const listing = { ...input, id: '60000000-0000-4000-8000-0000000000a1', user_id: userId, attributes: input.attributes, created_at: now(), updated_at: now() } as ListingDraft;
         listings.push(listing);
         return listing;
       },
@@ -347,6 +349,20 @@ describe('ResaleIQ API', () => {
     const { app } = makeApp();
     const response = await request(app).post('/api/v1/items/10000000-0000-4000-8000-0000000000b1/estimate').set('Authorization', 'Bearer user-a-token').send({ currency: 'USD' });
     expect(response.status).toBe(404);
+  });
+
+  it('validates, isolates, and supports listing draft endpoints', async () => {
+    const { app } = makeApp();
+    const headers = { Authorization: 'Bearer user-a-token' };
+    const invalid = await request(app).post('/api/v1/listings').set(headers).send({ title: 'Missing source', attributes: {} });
+    expect(invalid.status).toBe(400);
+    const created = await request(app).post('/api/v1/listings').set(headers).send({ identified_item_id: '10000000-0000-4000-8000-0000000000a1', title: 'Confirmed draft', description: 'Facts only', attributes: {}, status: 'draft' });
+    expect(created.status).toBe(201);
+    const listingId = created.body.id as string;
+    expect((await request(app).get('/api/v1/listings').set(headers)).status).toBe(200);
+    expect((await request(app).get(`/api/v1/listings/${listingId}`).set('Authorization', 'Bearer user-b-token')).status).toBe(404);
+    expect((await request(app).patch(`/api/v1/listings/${listingId}`).set('Authorization', 'Bearer user-b-token').send({ title: 'No access' })).status).toBe(404);
+    expect((await request(app).delete(`/api/v1/listings/${listingId}`).set('Authorization', 'Bearer user-b-token')).status).toBe(404);
   });
 
   it('returns database-backed analytics through the service contract', async () => {

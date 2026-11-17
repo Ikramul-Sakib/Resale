@@ -72,9 +72,23 @@ export const estimateCreateSchema = z.object({
 
 export const pricingHistorySchema = paginationSchema.extend({ item_id: uuid.optional() }).strict();
 
-export const listingListSchema = paginationSchema.strict();
-export const listingCreateSchema = z.object({
-  inventory_item_id: uuid,
+export const listingListSchema = paginationSchema.extend({
+  item_id: uuid.optional(),
+  marketplace_id: uuid.optional(),
+  search: z.string().trim().max(100).optional(),
+  include_archived: z.enum(['true', 'false']).transform((value) => value === 'true').default(false),
+}).strict();
+export const listingGenerateSchema = z.object({
+  item_id: uuid,
+  marketplace_id: uuid,
+  currency,
+  tone: z.enum(['concise', 'detailed', 'friendly', 'neutral']).default('neutral'),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  asking_price: z.number().positive().nullable().optional(),
+}).strict();
+const listingCreateBaseSchema = z.object({
+  inventory_item_id: uuid.nullable().optional(),
+  identified_item_id: uuid.nullable().optional(),
   marketplace_id: uuid.nullable().optional(),
   title: z.string().trim().min(1).max(200),
   description: z.string().max(10000).nullable().optional(),
@@ -84,7 +98,10 @@ export const listingCreateSchema = z.object({
   attributes: jsonObject.default({}),
   status: z.enum(['draft', 'ready', 'archived']).default('draft'),
 }).strict();
-export const listingPatchSchema = listingCreateSchema.omit({ inventory_item_id: true }).partial().strict();
+export const listingCreateSchema = listingCreateBaseSchema.superRefine((value, context) => {
+  if (!value.inventory_item_id && !value.identified_item_id) context.addIssue({ code: 'custom', path: ['inventory_item_id'], message: 'An inventory item or confirmed scanned item is required.' });
+});
+export const listingPatchSchema = listingCreateBaseSchema.omit({ inventory_item_id: true }).partial().strict();
 
 export const itemPatchSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),

@@ -21,7 +21,7 @@ on conflict (slug) do update set
 
 insert into public.marketplaces (slug, name, website_url, is_active)
 values
-  ('demo-marketplace', 'Demo marketplace (PLACEHOLDER)', 'https://example.invalid', false)
+  ('demo-marketplace', 'Demo marketplace (PLACEHOLDER)', 'https://example.invalid', true)
 on conflict (slug) do update set
   name = excluded.name,
   website_url = excluded.website_url,

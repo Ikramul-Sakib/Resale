@@ -211,18 +211,29 @@ always derived from the verified bearer token.
 
 ### Listings
 
-- `GET /api/v1/listings?page=1&limit=25`
+- `POST /api/v1/listings/generate`
+- `GET /api/v1/listings?page=1&limit=25&item_id=<uuid>&marketplace_id=<uuid>&search=keyboard`
 - `POST /api/v1/listings`
+- `GET /api/v1/listings/:id`
 - `PATCH /api/v1/listings/:id`
 - `DELETE /api/v1/listings/:id`
 
-`POST /api/v1/listings` saves an editable draft. It does not publish to an external marketplace.
+Generation accepts `{ "item_id": "<inventory-or-confirmed-item-uuid>", "marketplace_id": "<uuid>",
+"currency": "USD", "tone": "concise", "notes": "optional confirmed facts", "asking_price": 30 }`.
+It returns an unsaved draft. The item must be confirmed and the price must come from the latest
+estimate or an explicit user-entered price. Generation is guarded against rapid duplicate calls.
+The response includes `ai_mode`; `mock` explicitly means no Gemini call was made.
+
+`POST /api/v1/listings` saves an editable draft and creates an `audit_events` record. A draft may
+reference an owned inventory item or a confirmed scanned item. `DELETE` archives the draft rather
+than removing its audit history. Listing text is never published to an external marketplace.
+The generator returns title, description, condition description, selling points, keywords, and the
+estimate-derived suggested price. Marketplace title limits are read from the reference table.
 
 ### Remaining stubs
 
 These routes are authenticated and intentionally return `501 NOT_IMPLEMENTED` with a clear message until later phases:
 
-- `POST /api/v1/listings/generate`
 - `GET /api/v1/analytics/resale-index`
 
 They do not fabricate price estimates, listing text, comparables, or analytics.

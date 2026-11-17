@@ -12,6 +12,7 @@ import {
   inventoryPatchSchema,
   itemPatchSchema,
   listingCreateSchema,
+  listingGenerateSchema,
   listingListSchema,
   listingPatchSchema,
   paginationSchema,
@@ -53,10 +54,11 @@ export function createApiRouter(services: Services, verifier: TokenVerifier): Ro
   router.post('/items/:id/estimate', validate('params', idParamsSchema), validate('body', estimateCreateSchema), controller.estimateItem);
 
   router.get('/listings', validate('query', listingListSchema), controller.listListings);
+  router.post('/listings/generate', validate('body', listingGenerateSchema), controller.generateListing);
   router.post('/listings', validate('body', listingCreateSchema), controller.createListing);
+  router.get('/listings/:id', validate('params', idParamsSchema), controller.getListing);
   router.patch('/listings/:id', validate('params', idParamsSchema), validate('body', listingPatchSchema), controller.updateListing);
   router.delete('/listings/:id', validate('params', idParamsSchema), controller.deleteListing);
-  router.post('/listings/generate', controller.notImplemented);
 
   router.get('/pricing/history', validate('query', pricingHistorySchema), controller.pricingHistory);
   router.get('/estimates/:id', validate('params', idParamsSchema), controller.getEstimate);

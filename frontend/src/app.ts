@@ -6,6 +6,7 @@ import { renderIdentificationPage } from './pages/identification';
 import { renderPlaceholderPage } from './pages/placeholder';
 import { renderScanPage } from './pages/scan';
 import { renderSettingsPage } from './pages/settings';
+import { renderListingGeneratorPage } from './pages/listing-generator';
 import { renderAuthLoadingPage, renderForgotPasswordPage, renderLoginPage, renderRegisterPage, renderResetPasswordPage } from './pages/auth';
 import { consumeReturnPath, guardRoute, isPublicPath, navigate, normalizePath, rememberReturnPath, type AppPath } from './router';
 import { ApiError, getApiClient } from './services/api';
@@ -29,6 +30,7 @@ const state: AppState = {
   scanStatus: 'idle', uploadProgress: 0, scanError: '', cameraError: '', itemSaving: false,
   identification: { name: 'Mechanical keyboard, 75% layout', brand: 'Keychron', model: 'K2', category: 'Computer accessories', condition: 'Good, light wear', attributes: 'Wireless, hot-swappable, RGB' },
   estimateLoading: false, estimateError: '', marketplaces: [], estimateMarketplaceId: '', suggestedPriceInput: '', manualFeePercentage: '', inventorySaving: false,
+  listingLoading: false, listingError: '', listingDrafts: [], listingInventory: [], listingItemId: '', listingInventoryItemId: '', listingMarketplaceId: '', listingTone: 'neutral', listingNotes: '', listingPrice: '', listingDirty: false, listingSaving: false, listingCopyMessage: '', listingTitleMaxLength: 120, listingSaved: false,
 };
 
 let authService: AuthService | undefined;
@@ -36,6 +38,7 @@ let unsubscribeAuth: (() => void) | undefined;
 let toastTimer: number | undefined;
 let dashboardRequestInFlight = false;
 let estimateRequestInFlight = false;
+let listingRequestInFlight = false;
 
 function getService(): AuthService { if (!authService) authService = getAuthService(); return authService; }
 function isAuthenticated(): boolean { return state.authStatus === 'authenticated' && Boolean(state.user); }
@@ -48,6 +51,7 @@ function renderProtectedContent(): string {
   if (state.screen === 'scan') return renderScanPage(state, demoSession);
   if (state.screen === 'identification') return demoSession ? renderIdentificationPage(state.identification) : state.scanResult?.identified_item ? renderIdentificationPage(state.scanResult.identified_item, state.scanResult.images?.[0]?.signed_url, state.scanResult.ai_mode, state.scanResult.identification_empty, state.itemSaving) : '<article class="card phase-card"><h2>No identification yet</h2><p>Upload a product photo to begin.</p></article>';
   if (state.screen === 'estimate') return renderEstimatePage(state, { demoMode: demoSession, loading: state.estimateLoading, error: state.estimateError, estimate: state.estimate?.estimate, item: state.scanResult?.identified_item, imageUrl: state.scanResult?.images?.[0]?.signed_url, aiMode: state.estimate?.ai_mode, fee: state.estimate?.fee, marketplaces: state.marketplaces, marketplaceId: state.estimateMarketplaceId, suggestedPrice: state.suggestedPriceInput, manualFeePercentage: state.manualFeePercentage, savingInventory: state.inventorySaving });
+  if (state.screen === 'listing-generator') return renderListingGeneratorPage(state, { demoMode: demoSession, loading: state.listingLoading, error: state.listingError, generated: state.listingGenerated, aiMode: state.listingAiMode, drafts: state.listingDrafts, inventory: state.listingInventory, marketplaces: state.marketplaces, selectedItemId: state.listingItemId, selectedMarketplaceId: state.listingMarketplaceId, tone: state.listingTone, notes: state.listingNotes, price: state.listingPrice, dirty: state.listingDirty, saving: state.listingSaving, copyMessage: state.listingCopyMessage, titleMaxLength: state.listingTitleMaxLength, inventoryItemStatus: state.listingInventory.find((item) => item.id === state.listingInventoryItemId)?.status, saved: state.listingSaved });
   if (state.screen === 'settings' && isAuthenticated()) return renderSettingsPage({ email: state.user?.email ?? '', profile: state.profile, saving: state.settingsSaving, passwordSaving: state.passwordSaving, message: state.authSuccess, error: state.authError });
   return renderPlaceholderPage(state.screen as Exclude<ScreenId, 'dashboard' | 'scan' | 'identification' | 'estimate'>, demoSession);
 }
@@ -84,6 +88,87 @@ function showToast(message: string): void {
 
 async function loadMarketplaces(): Promise<void> {
   try { state.marketplaces = (await getApiClient().get<{ data: import('./services/api').Marketplace[] }>('/marketplaces')).data; } catch { state.marketplaces = []; }
+}
+
+async function loadListingData(): Promise<void> {
+  if (!isAuthenticated() || state.screen !== 'listing-generator' || listingRequestInFlight) return;
+  listingRequestInFlight = true;
+  try {
+    const [marketplaces, inventory, drafts] = await Promise.all([
+      getApiClient().get<{ data: import('./services/api').Marketplace[] }>('/marketplaces'),
+      getApiClient().get<{ data: import('./services/api').InventorySummary[] }>('/inventory?page=1&limit=100'),
+      getApiClient().get<{ data: import('./services/api').ListingDraft[] }>('/listings?page=1&limit=50'),
+    ]);
+    state.marketplaces = marketplaces.data; state.listingInventory = inventory.data; state.listingDrafts = drafts.data;
+    if (!state.listingMarketplaceId && state.marketplaces[0]) state.listingMarketplaceId = state.marketplaces[0].id;
+    if (!state.listingItemId && state.listingInventory[0]) state.listingItemId = state.listingInventory[0].id;
+    const marketplace = state.marketplaces.find((candidate) => candidate.id === state.listingMarketplaceId);
+    state.listingTitleMaxLength = marketplace?.title_max_length ?? 120;
+  } catch (error) { state.listingError = error instanceof ApiError ? error.message : 'Listing data could not be loaded.'; }
+  finally { listingRequestInFlight = false; render(); }
+}
+
+function updateListingGeneratedFromFields(): void {
+  if (!state.listingGenerated) return;
+  const field = (name: string) => document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-listing-${name}]`)?.value ?? '';
+  state.listingGenerated = { ...state.listingGenerated, title: field('title'), description: field('description'), condition_description: field('condition'), selling_points: field('points').split('\n').map((value) => value.trim()).filter(Boolean), keywords: field('keywords').split(',').map((value) => value.trim()).filter(Boolean) };
+  state.listingDirty = true;
+}
+
+async function generateListing(): Promise<void> {
+  if (!state.listingItemId || !state.listingMarketplaceId) { state.listingError = 'Choose an item and marketplace first.'; render(); return; }
+  if (state.listingGenerated && state.listingDirty && !window.confirm('Regenerate and overwrite your unsaved listing edits?')) return;
+  state.listingLoading = true; state.listingError = ''; state.listingCopyMessage = ''; render();
+  try {
+    const result = await getApiClient().post<import('./services/api').ListingGenerationResponse>('/listings/generate', { item_id: state.listingItemId, marketplace_id: state.listingMarketplaceId, currency: state.currency, tone: state.listingTone, notes: state.listingNotes || null, asking_price: state.listingPrice ? Number(state.listingPrice) : null });
+    state.listingGenerated = result.generated; state.listingAiMode = result.ai_mode; state.listingItemId = result.item_id; state.listingInventoryItemId = result.inventory_item_id ?? ''; state.listingPrice = result.generated.suggested_price == null ? '' : String(result.generated.suggested_price); state.listingTitleMaxLength = result.marketplace.title_max_length ?? 120; state.listingDirty = false; state.listingSaved = false;
+  } catch (error) { state.listingError = error instanceof ApiError ? error.message : 'The listing draft could not be generated.'; }
+  finally { state.listingLoading = false; render(); }
+}
+
+async function copyListing(kind: 'title' | 'description' | 'all'): Promise<void> {
+  if (!state.listingGenerated) return;
+  const generated = state.listingGenerated;
+  const text = kind === 'title' ? generated.title : kind === 'description' ? generated.description : `${generated.title}\n\n${generated.description}\n\nCondition: ${generated.condition_description}\n\nSelling points:\n${generated.selling_points.map((point) => `- ${point}`).join('\n')}\n\nKeywords: ${generated.keywords.join(', ')}`;
+  try {
+    const fallbackCopy = () => {
+      const textarea = document.createElement('textarea'); textarea.value = text; textarea.style.position = 'fixed'; textarea.style.opacity = '0'; document.body.appendChild(textarea); textarea.select(); if (!document.execCommand('copy')) throw new Error('copy failed'); textarea.remove();
+    };
+    if (navigator.clipboard?.writeText) { try { await navigator.clipboard.writeText(text); } catch { fallbackCopy(); } } else fallbackCopy();
+    state.listingCopyMessage = kind; render(); window.setTimeout(() => { state.listingCopyMessage = ''; render(); }, 1800);
+  } catch { state.toast = 'Copy is unavailable in this browser.'; render(); }
+}
+
+async function saveListing(): Promise<void> {
+  if (!state.listingGenerated) return;
+  updateListingGeneratedFromFields();
+  const generated = state.listingGenerated;
+  const title = generated.title.trim();
+  if (!title || title.length > state.listingTitleMaxLength) { state.listingError = 'Fix the title length before saving.'; render(); return; }
+  state.listingSaving = true; state.listingError = ''; render();
+  try {
+    const askingPrice = state.listingPrice ? Number(state.listingPrice) : generated.suggested_price;
+    const draft = await getApiClient().post<import('./services/api').ListingDraft>('/listings', { inventory_item_id: state.listingInventoryItemId || null, identified_item_id: state.listingInventoryItemId ? null : (state.listingItemId || null), marketplace_id: state.listingMarketplaceId || null, title, description: generated.description, condition: generated.condition_description, asking_price: askingPrice, asking_currency: generated.currency, attributes: { selling_points: generated.selling_points, keywords: generated.keywords }, status: 'draft' });
+    state.listingDrafts = [draft, ...state.listingDrafts.filter((candidate) => candidate.id !== draft.id)]; state.listingDirty = false; state.listingSaved = true; state.toast = 'Listing draft saved.';
+  } catch (error) { state.listingError = error instanceof ApiError ? error.message : 'The listing draft could not be saved.'; }
+  finally { state.listingSaving = false; render(); }
+}
+
+function openDraft(draftId: string): void {
+  const draft = state.listingDrafts.find((candidate) => candidate.id === draftId); if (!draft) return;
+  const attributes = draft.attributes ?? {};
+  state.listingItemId = draft.identified_item_id ?? draft.inventory_item_id ?? ''; state.listingInventoryItemId = draft.inventory_item_id ?? ''; state.listingMarketplaceId = draft.marketplace_id ?? state.listingMarketplaceId; state.listingGenerated = { title: draft.title, description: draft.description ?? '', condition_description: draft.condition ?? 'Condition to be confirmed by the seller.', selling_points: Array.isArray(attributes.selling_points) ? attributes.selling_points.map(String) : [], keywords: Array.isArray(attributes.keywords) ? attributes.keywords.map(String) : [], suggested_price: draft.asking_price ?? null, currency: draft.asking_currency ?? state.currency }; state.listingPrice = draft.asking_price == null ? '' : String(draft.asking_price); state.listingDirty = false; state.listingSaved = true; state.listingError = ''; render();
+}
+
+async function markListingPosted(): Promise<void> {
+  if (!state.listingInventoryItemId) return;
+  if (!window.confirm('Only mark this item Listed if you posted it yourself on the marketplace.')) return;
+  try { await getApiClient().patch(`/inventory/${state.listingInventoryItemId}`, { status: 'listed' }); state.listingInventory = state.listingInventory.map((item) => item.id === state.listingInventoryItemId ? { ...item, status: 'listed' } : item); showToast('Inventory item marked Listed.'); } catch (error) { state.listingError = error instanceof ApiError ? error.message : 'The inventory status could not be updated.'; render(); }
+}
+
+async function deleteDraft(draftId: string): Promise<void> {
+  if (!window.confirm('Delete this draft? It will be archived and removed from this list.')) return;
+  try { await getApiClient().request(`/listings/${draftId}`, { method: 'DELETE' }); state.listingDrafts = state.listingDrafts.filter((draft) => draft.id !== draftId); if (state.listingGenerated && state.listingDrafts.every((draft) => draft.id !== draftId)) state.toast = 'Listing draft deleted.'; render(); } catch (error) { state.listingError = error instanceof ApiError ? error.message : 'The listing draft could not be deleted.'; render(); }
 }
 
 async function loadEstimate(force = false): Promise<void> {
@@ -218,12 +303,18 @@ function handleAction(action: string, element: HTMLElement): void {
   if (action === 'retry-scan' && state.scanResult?.id) { state.scanStatus = 'identifying'; state.scanError = ''; render(); void getApiClient().post<import('./services/api').ScanResponse>(`/scans/${state.scanResult.id}/retry`).then((result) => { state.scanResult = result; state.scanStatus = 'completed'; navigate('/identification'); }).catch((error) => { state.scanStatus = 'failed'; state.scanError = error instanceof ApiError ? error.message : 'Retry failed.'; render(); }); return; }
   if (action === 'continue-estimate') { state.estimateItemId = state.scanResult?.identified_item?.id; navigate('/estimate'); void loadMarketplaces(); void loadEstimate(true); return; }
   if (action === 'retry-estimate') { void loadEstimate(true); return; }
-  if (action === 'generate-listing') { if (DEMO_MODE && !isAuthenticated()) showToast('Demo action: listing generation is a later phase.'); else navigate('/listing-generator'); return; }
+  if (action === 'generate-listing') { if (state.screen === 'estimate') { if (DEMO_MODE && !isAuthenticated()) { showToast('Demo action: listing generation is not connected.'); return; } state.listingItemId = state.estimateItemId ?? state.scanResult?.identified_item?.id ?? ''; state.listingMarketplaceId = state.estimateMarketplaceId; state.listingPrice = state.suggestedPriceInput; state.listingInventoryItemId = ''; state.listingGenerated = undefined; state.listingDirty = false; state.listingSaved = false; navigate('/listing-generator'); void loadListingData(); return; } void generateListing(); return; }
+  if (action === 'retry-listing') { void generateListing(); return; }
+  if (action === 'copy-title' || action === 'copy-description' || action === 'copy-all') { void copyListing(action === 'copy-title' ? 'title' : action === 'copy-description' ? 'description' : 'all'); return; }
+  if (action === 'save-listing') { void saveListing(); return; }
+  if (action === 'mark-listed') { void markListingPosted(); return; }
+  if (action === 'open-draft') { openDraft(element.dataset.draftId ?? ''); return; }
+  if (action === 'delete-draft') { void deleteDraft(element.dataset.draftId ?? ''); return; }
   if (action === 'save-inventory') { if (DEMO_MODE && !isAuthenticated()) { showToast('Demo action: inventory saving is connected in a later phase.'); return; } void saveInventory(); }
 }
 
 function bindEvents(): void {
-  document.querySelectorAll<HTMLElement>('[data-path]').forEach((element) => element.addEventListener('click', (event) => { event.preventDefault(); const path = element.dataset.path as AppPath | undefined; if (path) navigate(path); }));
+  document.querySelectorAll<HTMLElement>('[data-path]').forEach((element) => element.addEventListener('click', (event) => { event.preventDefault(); if (state.listingDirty && state.screen === 'listing-generator' && !window.confirm('You have unsaved listing edits. Leave this page?')) return; const path = element.dataset.path as AppPath | undefined; if (path) navigate(path); }));
   document.querySelectorAll<HTMLElement>('[data-action]').forEach((element) => element.addEventListener('click', () => handleAction(element.dataset.action ?? '', element)));
   document.querySelector<HTMLFormElement>('[data-auth-form]')?.addEventListener('submit', (event) => { event.preventDefault(); const form = event.currentTarget as HTMLFormElement; void handleAuthForm(form, form.dataset.authForm ?? ''); });
   document.querySelector<HTMLFormElement>('[data-settings-form]')?.addEventListener('submit', (event) => { event.preventDefault(); void saveSettings(event.currentTarget as HTMLFormElement); });
@@ -235,6 +326,12 @@ function bindEvents(): void {
   document.querySelector<HTMLSelectElement>('[data-estimate-marketplace]')?.addEventListener('change', (event) => { state.estimateMarketplaceId = (event.currentTarget as HTMLSelectElement).value; void calculateFee(); });
   document.querySelector<HTMLInputElement>('[data-estimate-suggested]')?.addEventListener('change', (event) => { state.suggestedPriceInput = (event.currentTarget as HTMLInputElement).value; void calculateFee(); });
   document.querySelector<HTMLInputElement>('[data-manual-fee]')?.addEventListener('change', (event) => { state.manualFeePercentage = (event.currentTarget as HTMLInputElement).value; void calculateFee(); });
+  document.querySelector<HTMLSelectElement>('[data-listing-item]')?.addEventListener('change', (event) => { if (state.listingDirty && !window.confirm('Change the item and discard your unsaved edits?')) { render(); return; } state.listingItemId = (event.currentTarget as HTMLSelectElement).value; state.listingInventoryItemId = state.listingInventory.some((item) => item.id === state.listingItemId) ? state.listingItemId : ''; state.listingGenerated = undefined; state.listingSaved = false; state.listingDirty = false; render(); });
+  document.querySelector<HTMLSelectElement>('[data-listing-marketplace]')?.addEventListener('change', (event) => { state.listingMarketplaceId = (event.currentTarget as HTMLSelectElement).value; const marketplace = state.marketplaces.find((candidate) => candidate.id === state.listingMarketplaceId); state.listingTitleMaxLength = marketplace?.title_max_length ?? 120; state.listingDirty = true; render(); });
+  document.querySelector<HTMLSelectElement>('[data-listing-tone]')?.addEventListener('change', (event) => { state.listingTone = (event.currentTarget as HTMLSelectElement).value as AppState['listingTone']; state.listingDirty = true; });
+  document.querySelector<HTMLTextAreaElement>('[data-listing-notes]')?.addEventListener('input', (event) => { state.listingNotes = (event.currentTarget as HTMLTextAreaElement).value; const count = document.querySelector('[data-notes-count]'); if (count) count.textContent = String(state.listingNotes.length); state.listingDirty = true; });
+  document.querySelector<HTMLInputElement>('[data-listing-price]')?.addEventListener('input', (event) => { state.listingPrice = (event.currentTarget as HTMLInputElement).value; state.listingDirty = true; });
+  document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-listing-title], [data-listing-description], [data-listing-condition], [data-listing-points], [data-listing-keywords]').forEach((input) => input.addEventListener('input', () => { updateListingGeneratedFromFields(); const title = document.querySelector<HTMLInputElement>('[data-listing-title]'); const titleCount = document.querySelector('[data-title-count]'); const titleWarning = document.querySelector<HTMLElement>('[data-title-warning]'); if (titleCount && title) titleCount.textContent = String(title.value.length); if (titleWarning && title) titleWarning.hidden = title.value.length <= state.listingTitleMaxLength; const description = document.querySelector<HTMLTextAreaElement>('[data-listing-description]'); const descriptionCount = document.querySelector('[data-description-count]'); if (descriptionCount && description) descriptionCount.textContent = String(description.value.length); }));
   document.querySelectorAll<HTMLInputElement>('[data-field]').forEach((input) => input.addEventListener('input', () => { state.identification[input.dataset.field as keyof AppState['identification']] = input.value; })); document.querySelector<HTMLFormElement>('[data-search-form]')?.addEventListener('submit', (event) => { event.preventDefault(); showToast(DEMO_MODE && !isAuthenticated() ? 'Demo search is not connected to live data.' : 'Search is not connected yet.'); });
 }
 
@@ -268,10 +365,10 @@ async function saveInventory(): Promise<void> {
 }
 
 async function initialize(): Promise<void> {
-  window.addEventListener('popstate', () => { clearFormState(); render(); void loadDashboard(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); } });
+  window.addEventListener('popstate', () => { clearFormState(); render(); void loadDashboard(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); } if (state.screen === 'listing-generator') void loadListingData(); });
   if (DEMO_MODE) { try { authService = getAuthService(); } catch { /* Demo mode can run without Supabase variables. */ } state.authStatus = 'unauthenticated'; render(); return; }
   try { const service = getService(); setAuthContext(await service.getContext()); unsubscribeAuth = service.onAuthStateChange((context) => { setAuthContext(context); render(); void loadDashboard(); }); } catch (error) { state.authStatus = 'error'; state.authError = error instanceof Error ? error.message : 'Authentication is not configured.'; }
-  render(); void loadDashboard(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); }
+  render(); void loadDashboard(); if (state.screen === 'estimate') { void loadMarketplaces(); void loadEstimate(); } if (state.screen === 'listing-generator') void loadListingData();
 }
 
 export function startApp(): void { void initialize(); }

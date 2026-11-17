@@ -15,6 +15,7 @@ import type {
   ListingPatchInput,
   PaginationOptions,
   PricingHistoryOptions,
+  ListingListOptions,
   RecordSaleInput,
   Repositories,
   ScanImageRecord,
@@ -140,6 +141,12 @@ class ReferenceRepository {
     const { data, error } = await this.client.from('marketplaces').select('*').eq('is_active', true).order('name');
     throwIfError(error);
     return (data ?? []) as Marketplace[];
+  }
+
+  async getMarketplaceById(id: string): Promise<Marketplace> {
+    const { data, error } = await this.client.from('marketplaces').select('*').eq('id', id).eq('is_active', true).maybeSingle();
+    throwIfError(error);
+    return requireData(data as Marketplace | null, 'Marketplace');
   }
 }
 
@@ -344,12 +351,26 @@ class ItemRepository {
 class ListingRepository {
   constructor(private readonly client: SupabaseDatabaseClient) {}
 
-  async list(userId: string, options: PaginationOptions): Promise<Page<ListingDraft>> {
-    const { data, error, count } = await this.client.from('listing_drafts').select('*', { count: 'exact' }).eq('user_id', userId)
+  async list(userId: string, options: ListingListOptions): Promise<Page<ListingDraft>> {
+    let query = this.client.from('listing_drafts').select('*', { count: 'exact' }).eq('user_id', userId);
+    if (!options.include_archived) query = query.neq('status', 'archived');
+    if (options.marketplace_id) query = query.eq('marketplace_id', options.marketplace_id);
+    if (options.item_id) query = query.or(`inventory_item_id.eq.${options.item_id},identified_item_id.eq.${options.item_id}`);
+    if (options.search) {
+      const search = escapeSearch(options.search);
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+    }
+    const { data, error, count } = await query
       .order('updated_at', { ascending: false })
       .range(pageOffset(options.page, options.limit), pageOffset(options.page, options.limit) + options.limit - 1);
     throwIfError(error);
     return page(data as ListingDraft[] | null, count, options);
+  }
+
+  async getById(userId: string, id: string): Promise<ListingDraft> {
+    const { data, error } = await this.client.from('listing_drafts').select('*').eq('id', id).eq('user_id', userId).maybeSingle();
+    throwIfError(error);
+    return requireData(data as ListingDraft | null, 'Listing draft');
   }
 
   async create(userId: string, input: ListingCreateInput): Promise<ListingDraft> {
@@ -365,7 +386,7 @@ class ListingRepository {
   }
 
   async delete(userId: string, id: string): Promise<void> {
-    const { data, error } = await this.client.from('listing_drafts').delete().eq('id', id).eq('user_id', userId).select('id').maybeSingle();
+    const { data, error } = await this.client.from('listing_drafts').update({ status: 'archived' }).eq('id', id).eq('user_id', userId).select('id').maybeSingle();
     throwIfError(error);
     requireData(data as { id: string } | null, 'Listing draft');
   }
@@ -401,10 +422,27 @@ class EstimateRepository {
     return data as Record<string, unknown> | null;
   }
 
+  async findLatestForItem(userId: string, itemId: string, currency?: string): Promise<Record<string, unknown> | null> {
+    let query = this.client.from('price_estimates').select('*').eq('user_id', userId).eq('identified_item_id', itemId);
+    if (currency) query = query.eq('currency', currency);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+    throwIfError(error);
+    return data as Record<string, unknown> | null;
+  }
+
   async getById(userId: string, id: string): Promise<Record<string, unknown>> {
     const { data, error } = await this.client.from('price_estimates').select('*').eq('id', id).eq('user_id', userId).maybeSingle();
     throwIfError(error);
     return requireData(data as Record<string, unknown> | null, 'Estimate');
+  }
+}
+
+class AuditRepository {
+  constructor(private readonly client: SupabaseDatabaseClient) {}
+
+  async create(userId: string, action: string, entityType: string, entityId: string, metadata: Record<string, unknown>): Promise<void> {
+    const { error } = await this.client.from('audit_events').insert({ user_id: userId, action, entity_type: entityType, entity_id: entityId, metadata });
+    throwIfError(error);
   }
 }
 
@@ -419,6 +457,7 @@ export function createRepositories(client: SupabaseDatabaseClient): Repositories
     scans: new ScanRepository(client),
     items: new ItemRepository(client),
     listings: new ListingRepository(client),
+    audit: new AuditRepository(client),
     pricing: new PricingRepository(client),
     estimates: new EstimateRepository(client),
   };

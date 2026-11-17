@@ -76,6 +76,21 @@ For an end-to-end upload with the explicit mock adapter:
 
 ```bash
 GEMINI_MOCK=true npm run test:e2e --workspace frontend
+
+## Listing generation
+
+The Listing Generator creates editable drafts from confirmed item data. Drafts are for you to copy
+into a marketplace; ResaleIQ does not publish listings. Generation is unsaved until you select
+Save draft, and saved drafts create an audit event. Set `GEMINI_MOCK=true` for local/E2E work.
+
+For one real Gemini listing call, create a JSON file in `backend/confirmed-item.json` containing
+confirmed item fields, then run:
+
+```bash
+npm run gemini:listing-smoke --workspace backend -- ./confirmed-item.json
+```
+
+The real listing smoke command is manual and is not part of the automated test suite.
 ```
 ### Price estimation
 

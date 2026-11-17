@@ -133,3 +133,47 @@ test('shows a failed estimate and retries it', async ({ page }) => {
   await page.getByRole('button', { name: 'Retry estimate' }).click();
   await expect(page.getByText('AI preliminary estimate')).toBeVisible();
 });
+
+async function reachListingGenerator(page: Page): Promise<void> {
+  await login(page);
+  await page.goto('/scan');
+  const fixture = path.resolve(process.cwd(), '../docs/design/01-dashboard.png');
+  await page.locator('[data-file-input]').setInputFiles(fixture);
+  await page.getByRole('button', { name: 'Identify & Estimate Price' }).click();
+  await expect(page).toHaveURL(/\/identification$/);
+  await page.getByLabel('Product name').fill('Confirmed listing product');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Identification changes saved.')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue to Price Estimation' }).click();
+  await expect(page.getByText('AI preliminary estimate')).toBeVisible();
+  await page.getByRole('button', { name: 'Generate Listing' }).click();
+  await expect(page).toHaveURL(/\/listing-generator$/);
+  await expect(page.getByText('Drafts are for you to copy into a marketplace.')).toBeVisible();
+}
+
+test('generates, edits, copies, saves, reopens, and deletes a listing draft', async ({ page }) => {
+  await reachListingGenerator(page);
+  await page.getByRole('button', { name: 'Generate listing' }).click();
+  await expect(page.getByRole('heading', { name: 'Review draft' })).toBeVisible();
+  await page.getByLabel('Listing title').fill('Edited confirmed listing title');
+  await page.getByRole('button', { name: 'Copy title' }).click();
+  await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect(page.getByText('Listing draft saved.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
+  await expect(page.getByLabel('Listing title')).toHaveValue('Edited confirmed listing title');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByText('No saved listing drafts yet.')).toBeVisible();
+});
+
+test('shows a failed listing generation and retries it', async ({ page }) => {
+  await reachListingGenerator(page);
+  await page.route('**/api/v1/listings/generate', async (route) => route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: { code: 'GEMINI_UNAVAILABLE', message: 'Gemini is temporarily unavailable. Please try again.' } }) }));
+  await page.getByRole('button', { name: 'Generate listing' }).click();
+  await expect(page.getByRole('alert')).toContainText('Gemini is temporarily unavailable');
+  await page.unroute('**/api/v1/listings/generate');
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByRole('heading', { name: 'Review draft' })).toBeVisible();
+});

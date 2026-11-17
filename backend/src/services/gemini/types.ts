@@ -49,10 +49,37 @@ export interface PriceEstimateResult {
   uncertainty_note: string | null;
 }
 
+export interface ConfirmedListingItem {
+  name: string;
+  brand: string | null;
+  model: string | null;
+  category: string | null;
+  productType: string | null;
+  condition: string | null;
+  keyAttributes: Record<string, unknown>;
+  suggestedPrice: number | null;
+  currency: string;
+  targetMarketplace: string;
+  titleMaxLength: number;
+  tone: 'concise' | 'detailed' | 'friendly' | 'neutral';
+  extraNotes: string | null;
+}
+
+export interface ListingGenerationResult {
+  title: string;
+  description: string;
+  condition_description: string;
+  selling_points: string[];
+  suggested_price: number | null;
+  currency: string;
+  keywords: string[];
+}
+
 export interface GeminiAdapter {
   readonly mode: 'real' | 'mock';
   identifyProduct(images: ImageInput[]): Promise<IdentificationResult>;
   estimatePrice(item: ConfirmedPricingItem): Promise<PriceEstimateResult>;
+  generateListing(item: ConfirmedListingItem): Promise<ListingGenerationResult>;
   extractAttributes(images: ImageInput[], productName?: string | null): Promise<Record<string, unknown>>;
 }
 
@@ -62,6 +89,5 @@ export interface GeminiService {
   extractAttributes(images: ImageInput[], productName?: string | null): Promise<Record<string, unknown>>;
   /** Reserved for Phase 7. */
   estimatePrice(item: ConfirmedPricingItem): Promise<PriceEstimateResult>;
-  /** Reserved for Phase 8. */
-  generateListing: undefined;
+  generateListing(item: ConfirmedListingItem): Promise<ListingGenerationResult>;
 }

@@ -67,4 +67,21 @@ export interface AppState {
   suggestedPriceInput: string;
   manualFeePercentage: string;
   inventorySaving: boolean;
+  listingLoading: boolean;
+  listingError: string;
+  listingGenerated?: import('../services/api').GeneratedListing;
+  listingAiMode?: 'real' | 'mock';
+  listingDrafts: import('../services/api').ListingDraft[];
+  listingInventory: import('../services/api').InventorySummary[];
+  listingItemId: string;
+  listingInventoryItemId: string;
+  listingMarketplaceId: string;
+  listingTone: 'concise' | 'detailed' | 'friendly' | 'neutral';
+  listingNotes: string;
+  listingPrice: string;
+  listingDirty: boolean;
+  listingSaving: boolean;
+  listingCopyMessage: '' | 'title' | 'description' | 'all';
+  listingTitleMaxLength: number;
+  listingSaved: boolean;
 }

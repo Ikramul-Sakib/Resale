@@ -73,6 +73,7 @@ export interface Marketplace {
   name: string;
   website_url?: string | null;
   is_active: boolean;
+  title_max_length?: number;
   created_at: string;
   updated_at: string;
 }
@@ -93,7 +94,8 @@ export interface FeeRule {
 export interface ListingDraft {
   id: string;
   user_id: string;
-  inventory_item_id: string;
+  inventory_item_id?: string | null;
+  identified_item_id?: string | null;
   marketplace_id?: string | null;
   title: string;
   description?: string | null;

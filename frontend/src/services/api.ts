@@ -76,7 +76,11 @@ export interface PriceEstimate {
 }
 export interface FeeResult { status: 'verified' | 'user_entered_unverified'; fee_amount: number; rule?: { name: string; source: string; verified_at?: string | null; percentage_rate?: number | null } | null; }
 export interface EstimateResponse { estimate: PriceEstimate; ai_mode: 'real' | 'mock'; market_data_status: 'not_connected' | 'connected'; fee: { status: string; fee_amount: number; rule?: unknown } | null; cached?: boolean; }
-export interface Marketplace { id: string; name: string; slug: string; is_active: boolean; }
+export interface Marketplace { id: string; name: string; slug: string; is_active: boolean; title_max_length?: number; }
+export interface InventorySummary { id: string; identified_item_id?: string | null; item_name: string; condition?: string | null; status: 'owned' | 'listed' | 'sold' | 'archived'; estimated_value?: number | null; estimated_value_currency?: string | null; }
+export interface ListingDraft { id: string; user_id: string; inventory_item_id?: string | null; identified_item_id?: string | null; marketplace_id?: string | null; title: string; description?: string | null; condition?: string | null; asking_price?: number | null; asking_currency?: string | null; attributes: Record<string, unknown>; status: 'draft' | 'ready' | 'archived'; created_at: string; updated_at: string; }
+export interface GeneratedListing { title: string; description: string; condition_description: string; selling_points: string[]; suggested_price: number | null; currency: string; keywords: string[]; }
+export interface ListingGenerationResponse { generated: GeneratedListing; item_id: string; inventory_item_id: string | null; marketplace: Marketplace & { title_max_length?: number }; ai_mode: 'real' | 'mock'; estimate_id: string | null; unsaved: true; }
 
 function baseUrl(): string {
   return ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1').replace(/\/$/, '');

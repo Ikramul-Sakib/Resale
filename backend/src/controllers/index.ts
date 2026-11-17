@@ -87,8 +87,14 @@ export function createControllers(services: Services) {
     async listListings(req: RequestWithContext, res: Response): Promise<void> {
       res.json(await services.listings.list(userId(req), validated(req, 'query')));
     },
+    async generateListing(req: RequestWithContext, res: Response): Promise<void> {
+      res.status(200).json(await services.listings.generate(userId(req), validated(req, 'body')));
+    },
     async createListing(req: RequestWithContext, res: Response): Promise<void> {
       res.status(201).json(await services.listings.create(userId(req), validated(req, 'body')));
+    },
+    async getListing(req: RequestWithContext, res: Response): Promise<void> {
+      res.json(await services.listings.get(userId(req), validated<{ id: string }>(req, 'params').id));
     },
     async updateListing(req: RequestWithContext, res: Response): Promise<void> {
       const params = validated<{ id: string }>(req, 'params');

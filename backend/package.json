@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "gemini:smoke": "tsx scripts/gemini-smoke.ts",
-    "gemini:price-smoke": "tsx scripts/gemini-price-smoke.ts"
+    "gemini:price-smoke": "tsx scripts/gemini-price-smoke.ts",
+    "gemini:listing-smoke": "tsx scripts/gemini-listing-smoke.ts"
   },
   "dependencies": {
     "@google/genai": "^3.4.0",
