@@ -9,8 +9,9 @@
     "typescript": "5.9.3"
   },
   "scripts": {
-    "dev": "npm run dev --workspace frontend",
-    "dev:backend": "npm run dev --workspace backend",
+    "dev": "node scripts/run-with-local-supabase-env.mjs npm run dev --workspace frontend",
+    "dev:backend": "node scripts/run-with-local-supabase-env.mjs npm run dev --workspace backend",
+    "start:backend:local": "node scripts/run-with-local-supabase-env.mjs npm run start --workspace backend",
     "build": "npm run build --workspace frontend",
     "build:all": "npm run build --workspace frontend && npm run build --workspace backend",
     "preview": "npm run preview --workspace frontend",

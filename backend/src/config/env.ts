@@ -38,13 +38,24 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     throw new Error(`Environment validation failed. Set the required backend variables: ${issues}`);
   }
 
-  const corsOrigins = result.data.CORS_ORIGIN.split(',')
+  const configuredOrigins = result.data.CORS_ORIGIN.split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  if (corsOrigins.length === 0) {
+  if (configuredOrigins.length === 0) {
     throw new Error('Environment validation failed. CORS_ORIGIN must contain at least one origin.');
   }
 
-  return { ...result.data, corsOrigins };
+  const corsOrigins = new Set(configuredOrigins);
+  if (result.data.NODE_ENV === 'development') {
+    for (const origin of configuredOrigins) {
+      const loopback = /^(https?:\/\/)(localhost|127\.0\.0\.1)(:\d+)?$/.exec(origin);
+      if (!loopback) continue;
+      const [, protocol, hostname, port = ''] = loopback;
+      const alias = hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+      corsOrigins.add(`${protocol}${alias}${port}`);
+    }
+  }
+
+  return { ...result.data, corsOrigins: [...corsOrigins] };
 }

@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import { loadEnv } from '../src/config/env.js';
 import type { Services } from '../src/services/contracts.js';
 import type { AnalyticsDashboard, FeeCalculationResult } from '../src/repositories/contracts.js';
 import type { InventoryItem, ListingDraft, Marketplace, Page, SalesRecord } from '../src/types/index.js';
@@ -215,10 +216,10 @@ function makeServices(): { services: Services; items: InventoryItem[]; sales: Sa
   return { services, items, sales };
 }
 
-function makeApp() {
+function makeApp(appEnv = env) {
   const test = makeServices();
   const app = createApp({
-    env,
+    env: appEnv,
     services: test.services,
     verifier: {
       async verify(token) {
@@ -232,6 +233,27 @@ function makeApp() {
 }
 
 describe('ResaleIQ API', () => {
+  it.each([
+    ['development', 'http://127.0.0.1:5173', 204],
+    ['development', 'http://127.0.0.1:5174', 403],
+    ['production', 'http://127.0.0.1:5173', 403],
+  ] as const)('applies the %s scan-upload CORS allowlist to %s', async (mode, origin, status) => {
+    const appEnv = loadEnv({
+      NODE_ENV: mode,
+      CORS_ORIGIN: 'http://localhost:5173',
+      SUPABASE_URL: 'http://127.0.0.1:54321',
+      SUPABASE_SERVICE_ROLE_KEY: 'test-key',
+    });
+    const { app } = makeApp(appEnv);
+    const response = await request(app).options('/api/v1/scans')
+      .set('Origin', origin)
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'authorization');
+
+    expect(response.status).toBe(status);
+    expect(response.headers['access-control-allow-origin']).toBe(status === 204 ? origin : undefined);
+  });
+
   it('requires authentication on protected routes', async () => {
     const { app } = makeApp();
     const response = await request(app).get('/api/v1/inventory');

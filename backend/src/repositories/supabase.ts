@@ -238,13 +238,18 @@ class AnalyticsRepository {
     throwIfError(inventory.error);
     throwIfError(sales.error);
     throwIfError(activity.error);
-    const inventoryRows = (inventory.data ?? []) as Array<{ id: string; status: InventoryItem['status']; estimated_value?: number | string | null; estimated_value_currency?: string | null; category_id?: string | null; item_name: string }>;
-    const saleRows = (sales.data ?? []) as Array<{ inventory_item_id: string; sale_price: number | string; sale_currency: string; net_earnings: number | string; net_currency: string; sold_at: string; fee_amount: number | string }>;
+    const inventoryRows = (inventory.data ?? []) as Array<{ id: string; status: InventoryItem['status']; estimated_value?: number | string | null; estimated_value_currency?: string | null; category_id?: string | null; item_name: string; purchase_price?: number | string | null }>;
+    const saleRows = (sales.data ?? []) as Array<{ inventory_item_id: string; sale_price: number | string; sale_currency: string; net_earnings: number | string; net_currency: string; sold_at: string; fee_amount: number | string; attributes?: Record<string, unknown> }>;
     const count = (status: InventoryItem['status']) => inventoryRows.filter((row) => row.status === status).length;
     const byCurrency = (rows: Array<{ currency: string; value: number }>) => rows.reduce<Record<string, number>>((result, row) => { result[row.currency] = Number(((result[row.currency] ?? 0) + row.value).toFixed(2)); return result; }, {});
     const inventoryValueByCurrency = byCurrency(inventoryRows.filter((row) => row.estimated_value != null).map((row) => ({ currency: row.estimated_value_currency ?? 'BDT', value: Number(row.estimated_value ?? 0) })));
     const revenueByCurrency = byCurrency(saleRows.map((row) => ({ currency: row.sale_currency, value: Number(row.sale_price) })));
-    const profitByCurrency = byCurrency(saleRows.map((row) => ({ currency: row.net_currency, value: Number(row.net_earnings) })));
+    const inventoryById = new Map(inventoryRows.map((row) => [row.id, row]));
+    const profitByCurrency = byCurrency(saleRows.map((row) => {
+      const capturedPurchaseCost = Number(row.attributes?.purchase_cost);
+      const purchaseCost = Number.isFinite(capturedPurchaseCost) ? capturedPurchaseCost : Number(inventoryById.get(row.inventory_item_id)?.purchase_price ?? 0);
+      return { currency: row.net_currency, value: Number(row.net_earnings) - purchaseCost };
+    }));
     const months = saleRows.reduce<Record<string, { revenue_by_currency: Record<string, number>; count: number }>>((result, row) => { const month = row.sold_at.slice(0, 7); const entry = result[month] ?? { revenue_by_currency: {}, count: 0 }; entry.count += 1; entry.revenue_by_currency[row.sale_currency] = Number(((entry.revenue_by_currency[row.sale_currency] ?? 0) + Number(row.sale_price)).toFixed(2)); result[month] = entry; return result; }, {});
     const categoryNames = new Map<string, string>();
     const categoryIds = [...new Set(inventoryRows.map((row) => row.category_id).filter(Boolean))] as string[];
@@ -261,7 +266,7 @@ class AnalyticsRepository {
       },
       sales: {
         count: saleRows.length,
-        net_earnings: Number(Object.values(profitByCurrency).reduce((sum, value) => sum + value, 0).toFixed(2)),
+        net_earnings: Number(saleRows.reduce((sum, row) => sum + Number(row.net_earnings), 0).toFixed(2)),
         revenue_by_currency: revenueByCurrency,
         profit_by_currency: profitByCurrency,
       },
@@ -283,7 +288,7 @@ class ScanRepository {
   async list(userId: string, options: ScanListOptions): Promise<Page<Record<string, unknown>>> {
     let query = this.client.from('scans').select('*', { count: 'exact' }).eq('user_id', userId);
     if (options.status) query = query.eq('status', options.status);
-    if (options.search) query = query.ilike('id', `%${escapeSearch(options.search)}%`);
+    if (options.search) query = query.ilike('id_search', `%${escapeSearch(options.search)}%`);
     const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range(pageOffset(options.page, options.limit), pageOffset(options.page, options.limit) + options.limit - 1);
@@ -518,7 +523,10 @@ class PriceGuideRepository {
       const itemIds = ((identified.data ?? []) as Array<{ id: string }>).map((item) => item.id);
       const estimates = itemIds.length ? await this.client.from('price_estimates').select('id,low,typical,high,suggested_price,currency,data_source,created_at,updated_at,identified_item_id').eq('user_id', userId).in('identified_item_id', itemIds).order('created_at', { ascending: false }) : { data: [], error: null };
       throwIfError(estimates.error);
-      const sales = itemIds.length ? await this.client.from('sales').select('id,inventory_item_id,sale_price,sale_currency,net_earnings,net_currency,sold_at').eq('user_id', userId).in('inventory_item_id', itemIds).order('sold_at', { ascending: false }) : { data: [], error: null };
+      const inventory = itemIds.length ? await this.client.from('inventory_items').select('id,identified_item_id').eq('user_id', userId).in('identified_item_id', itemIds) : { data: [], error: null };
+      throwIfError(inventory.error);
+      const inventoryIds = ((inventory.data ?? []) as Array<{ id: string }>).map((row) => row.id);
+      const sales = inventoryIds.length ? await this.client.from('sales').select('id,inventory_item_id,sale_price,sale_currency,net_earnings,net_currency,sold_at').eq('user_id', userId).in('inventory_item_id', inventoryIds).order('sold_at', { ascending: false }) : { data: [], error: null };
       throwIfError(sales.error);
       const observations = itemIds.length ? await this.client.from('market_price_observations').select('*').eq('user_id', userId).in('identified_item_id', itemIds).order('observed_at', { ascending: false }).limit(50) : { data: [], error: null };
       throwIfError(observations.error);

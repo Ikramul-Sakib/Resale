@@ -92,8 +92,12 @@ export interface AppState {
   inventoryStatus: string;
   inventoryCondition: string;
   inventorySort: string;
+  inventoryPage: number;
+  inventoryTotalPages: number;
   inventorySelected?: import('../services/api').InventoryItem | null;
   savedScans: import('../services/api').ScanResponse[];
+  savedScansPage: number;
+  savedScansTotalPages: number;
   savedScansLoading: boolean;
   savedScansError: string;
   savedScansStatus: string;

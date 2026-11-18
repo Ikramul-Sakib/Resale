@@ -42,11 +42,14 @@ backend has no guessed model default. Set `GEMINI_MOCK=true` for local/E2E ident
 without making a Gemini call. Local confirmation and password-reset emails are available in
 Mailpit at http://127.0.0.1:54324.
 
-Start the API and frontend in separate terminals:
+Start Supabase first, then start the API and frontend in separate terminals. The root commands
+refresh the active local Supabase keys automatically, so they do not reuse keys from an older
+local stack:
 
 ```bash
-npm run dev --workspace backend
-npm run dev --workspace frontend
+supabase start
+npm run dev:backend
+npm run dev
 ```
 
 The frontend is at http://127.0.0.1:5173 and the API health check is at

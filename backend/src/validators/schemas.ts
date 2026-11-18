@@ -53,7 +53,7 @@ export const salesCreateSchema = z.object({
   sale_currency: currency,
   fee_amount: z.number().nonnegative().default(0),
   fee_currency: currency,
-  net_earnings: z.number().nonnegative(),
+  net_earnings: z.number(),
   net_currency: currency,
   sold_at: z.string().datetime().optional(),
   attributes: jsonObject.default({}),
